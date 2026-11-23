@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://small-yokohama.local/schemas/camera.schema.json",
+  "title": "Small Yokohama Orthographic Camera Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "epsg",
+    "axisOrder",
+    "originEpsg6677",
+    "centerLocalM",
+    "azimuthDeg",
+    "depressionDeg",
+    "refDistanceM",
+    "cameraOriginLocalM",
+    "basis",
+    "metersPerPixel",
+    "nearM",
+    "farM",
+    "imageWidthPx",
+    "imageHeightPx",
+    "imageOriginPx",
+    "workingGrid",
+    "dzi",
+    "dataTileGrid"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "epsg": { "type": "string", "const": "EPSG:6677" },
+    "axisOrder": { "type": "string", "const": "easting-northing" },
+    "originEpsg6677": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["easting", "northing"],
+      "properties": {
+        "easting": { "type": "number" },
+        "northing": { "type": "number" }
+      }
+    },
+    "centerLocalM": { "$ref": "#/$defs/vec3" },
+    "azimuthDeg": { "type": "number" },
+    "depressionDeg": { "type": "number" },
+    "refDistanceM": { "type": "number", "exclusiveMinimum": 0 },
+    "cameraOriginLocalM": { "$ref": "#/$defs/vec3" },
+    "basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["right", "up", "forward"],
+      "properties": {
+        "right": { "$ref": "#/$defs/vec3" },
+        "up": { "$ref": "#/$defs/vec3" },
+        "forward": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "metersPerPixel": { "type": "number", "exclusiveMinimum": 0 },
+    "nearM": { "type": "number", "minimum": 0 },
+    "farM": { "type": "number", "exclusiveMinimum": 0 },
+    "imageWidthPx": { "type": "integer", "minimum": 1 },
+    "imageHeightPx": { "type": "integer", "minimum": 1 },
+    "imageOriginPx": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "workingGrid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cols", "rows", "tileSizePx", "overlapPx"],
+      "properties": {
+        "cols": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "tileSizePx": { "type": "integer", "minimum": 1 },
+        "overlapPx": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "dzi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tileSize", "overlap", "format"],
+      "properties": {
+        "tileSize": { "type": "integer", "minimum": 1 },
+        "overlap": { "type": "integer", "minimum": 0 },
+        "format": { "type": "string", "enum": ["png", "webp", "jpeg"] }
+      }
+    },
+    "dataTileGrid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tileSizePx", "cols", "rows"],
+      "properties": {
+        "tileSizePx": { "type": "integer", "minimum": 1 },
+        "cols": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}

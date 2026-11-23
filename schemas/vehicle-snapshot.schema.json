@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://small-yokohama.local/schemas/vehicle-snapshot.schema.json",
+  "title": "Small Yokohama Public Vehicle Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "fetchedAt",
+    "feedHealth",
+    "feedMessage",
+    "source",
+    "vehicles"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "fetchedAt": { "type": "string", "format": "date-time" },
+    "feedHealth": {
+      "type": "string",
+      "enum": ["ok", "no_service", "no_match", "outage"]
+    },
+    "feedMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ja", "en"],
+      "properties": {
+        "ja": { "type": "string" },
+        "en": { "type": "string" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "labelJa", "labelEn", "attribution"],
+      "properties": {
+        "id": { "type": "string" },
+        "labelJa": { "type": "string" },
+        "labelEn": { "type": "string" },
+        "attribution": { "type": "string" }
+      }
+    },
+    "vehicles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entityId",
+          "mode",
+          "routeId",
+          "routeLabelJa",
+          "routeLabelEn",
+          "tripId",
+          "directionId",
+          "directionLabelJa",
+          "directionLabelEn",
+          "observedAt",
+          "fetchedAt",
+          "lon",
+          "lat",
+          "bearingDeg",
+          "speedMps",
+          "deckId",
+          "roadElevationM",
+          "lengthM",
+          "widthM",
+          "heightM",
+          "articulated"
+        ],
+        "properties": {
+          "entityId": { "type": "string" },
+          "mode": {
+            "type": "string",
+            "enum": ["observed", "scheduled", "synthetic", "replay"]
+          },
+          "routeId": { "type": "string" },
+          "routeLabelJa": { "type": "string" },
+          "routeLabelEn": { "type": "string" },
+          "tripId": { "type": ["string", "null"] },
+          "directionId": { "type": ["integer", "null"] },
+          "directionLabelJa": { "type": "string" },
+          "directionLabelEn": { "type": "string" },
+          "observedAt": { "type": ["string", "null"], "format": "date-time" },
+          "fetchedAt": { "type": "string", "format": "date-time" },
+          "lon": { "type": "number" },
+          "lat": { "type": "number" },
+          "bearingDeg": { "type": "number" },
+          "speedMps": { "type": "number", "minimum": 0 },
+          "deckId": { "type": "string" },
+          "roadElevationM": { "type": "number" },
+          "lengthM": { "type": "number", "exclusiveMinimum": 0 },
+          "widthM": { "type": "number", "exclusiveMinimum": 0 },
+          "heightM": { "type": "number", "exclusiveMinimum": 0 },
+          "articulated": { "type": "boolean" },
+          "shapeProgress": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "statusNote": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "replayDurationSec": { "type": "number", "exclusiveMinimum": 0 },
+    "keyframes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["timeSec", "lon", "lat", "bearingDeg", "roadElevationM"],
+          "properties": {
+            "timeSec": { "type": "number", "minimum": 0 },
+            "lon": { "type": "number" },
+            "lat": { "type": "number" },
+            "bearingDeg": { "type": "number" },
+            "roadElevationM": { "type": "number" },
+            "deckId": { "type": "string" },
+            "noteJa": { "type": "string" },
+            "noteEn": { "type": "string" }
+          }
+        }
+      }
+    },
+    "portCalls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "vesselNameJa",
+          "vesselNameEn",
+          "berthJa",
+          "berthEn",
+          "lon",
+          "lat",
+          "arrivalTime",
+          "departureTime",
+          "mode",
+          "source"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "vesselNameJa": { "type": "string" },
+          "vesselNameEn": { "type": "string" },
+          "berthJa": { "type": "string" },
+          "berthEn": { "type": "string" },
+          "lon": { "type": "number" },
+          "lat": { "type": "number" },
+          "arrivalTime": { "type": "string" },
+          "departureTime": { "type": "string" },
+          "mode": { "type": "string", "const": "scheduled" },
+          "source": { "type": "string" }
+        }
+      }
+    }
+  }
+}

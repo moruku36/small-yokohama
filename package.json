@@ -1,0 +1,25 @@
+{
+  "name": "small-yokohama",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "tools/pilot-builder",
+    "viewer"
+  ],
+  "scripts": {
+    "build:pilot": "npm.cmd --workspace @small-yokohama/pilot-builder run build:pilot",
+    "dev": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run dev",
+    "build": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run build",
+    "preview": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run preview",
+    "typecheck": "npm.cmd --workspace @small-yokohama/core run typecheck && npm.cmd --workspace @small-yokohama/pilot-builder run typecheck && npm.cmd --workspace @small-yokohama/viewer run typecheck",
+    "test": "npx.cmd vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
