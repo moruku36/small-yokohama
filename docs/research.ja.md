@@ -21,6 +21,7 @@ Googleが使われているのは、原画を作るための3D素材です。閲
 
 | レイヤー | 確認したこと | 実装時に確かめること・出典 |
 | --- | --- | --- |
+| 海岸線 | OSM由来の陸域ポリゴンに、WGS84の詳細版Shapefileがある。分割版には重なりがある。 | 先行街区で切り出して重なりを統合し、PLATEAUの岸壁との位置を確認する。ODbLの出典を記録する。[配布物と利用条件](https://osmdata.openstreetmap.de/data/land-polygons.html) |
 | 建物・道路・地形・橋 | 横浜市2024年度版にCityGML、複数詳細度の建物・道路、地形、橋梁、索引図がある。 | 取得した版・ハッシュを固定。新港の各メッシュと歩道橋の収録状況を確認し、詳細形状がなければLOD1で描く。配布元のサイトポリシー、個別の注記、出典・加工表記を適用。[データセット](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024) · [索引図（PDF）](https://assets.cms.plateau.reearth.io/assets/77/ac1e93-e863-47f5-908f-313abc462ddd/14100_indexmap_op.pdf) · [利用条件](https://www.mlit.go.jp/plateau/site-policy/) |
 | バスの経路とダイヤ | ODPTには2026年11月1日有効開始の横浜市営バスGTFS-JPを掲載。横浜市のベイサイドブルー案内は横浜駅、みなとみらい、山下方面を結ぶ。 | 運行日に有効な版で往復の経路・便ID・運休例外を確認する。開発者登録と基本・特定利用条件を確認。[静的カタログ](https://ckan.odpt.org/dataset/yokohama_municipal_bus) · [横浜市の路線案内](https://www.city.yokohama.lg.jp/kotsu/bus/norikata/baysideblue.html) |
 | バスの実測位置 | ODPTの横浜市交通局配布ページにVehiclePosition・Protocol Buffers・アクセストークン付きの取得先が明記されている。 | サーバー側で取得を集約。今回は認証付きデータの受信や、ベイサイドブルーの便との照合は未実施。鮮度・利用枠・表示・キャッシュ・保存期間を運用条件と突き合わせる。[車両位置の配布ページ](https://ckan.odpt.org/dataset/b_bus_gtfs_rt-yokohamamunicipal/resource/cafd8fda-f99b-4167-9c14-c9e35cc7c42f) · [動的カタログ](https://ckan.odpt.org/dataset/b_bus_gtfs_rt-yokohamamunicipal) · [ODPT利用条件](https://developer.odpt.org/terms) |

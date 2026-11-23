@@ -1,6 +1,6 @@
 # Designing the waterfront miniature
 
-[日本語](design.ja.md) · [Home](../README.md) · [Mapped boundaries](../scope/waterfront.geojson) · [Source register](research.md)
+[日本語](design.ja.md) · [Home](../README.md) · [Development stack and data](technology.md) · [Mapped boundaries](../scope/waterfront.geojson) · [Source register](research.md)
 
 ## Where to draw
 

@@ -1,6 +1,6 @@
 # 横浜の海側を、小さな動く街にする設計
 
-[English](design.md) · [ホーム](../README.ja.md) · [範囲の地図](../scope/waterfront.geojson) · [出典一覧](research.ja.md)
+[English](design.md) · [ホーム](../README.ja.md) · [開発技術とデータ](technology.ja.md) · [範囲の地図](../scope/waterfront.geojson) · [出典一覧](research.ja.md)
 
 ## どこを描くか
 

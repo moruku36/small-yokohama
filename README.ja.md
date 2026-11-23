@@ -1,10 +1,12 @@
 # スモール横浜 · Small Yokohama
 
-[English](README.md) · [地図で対象範囲を見る](scope/waterfront.geojson) · [全体設計](docs/design.ja.md) · [調査・出典](docs/research.ja.md)
+[English](README.md) · [開発技術とデータ](docs/technology.ja.md) · [地図で対象範囲を見る](scope/waterfront.geojson) · [全体設計](docs/design.ja.md) · [調査・出典](docs/research.ja.md)
 
 青い連節バスが倉庫の角を曲がって建物の陰に入り、地図を海沿いに動かすと山下公園が見えてくる。**スモール横浜**は、横浜駅からみなとみらいを経て元町・中華街までを、拡大して眺められる一枚の動くイラストにする計画です。このリポジトリには調査結果、全体設計、対象範囲の地図を収録しています。ビューアと実データ接続は次の実装段階です。
 
 ## 地図の作り方
+
+画面はTypeScriptとOpenSeadragon、PLATEAUの前処理・Blenderの制御・市営バスの取得はPythonで実装する計画です。最初の4枚を作るための公式リポジトリと、選ぶ地図・交通データを開発ガイドにまとめました。[開発技術とデータ](docs/technology.ja.md)
 
 横浜市の3D都市モデル「PLATEAU」を固定カメラで描画し、街をイラストにします。同じカメラで各地点までの奥行きも記録しておくと、バスが建物の裏を通る瞬間に車体の一部だけを隠せます。ブラウザは、今見えている範囲の画像だけを読み込みます。[全体設計](docs/design.ja.md)
 

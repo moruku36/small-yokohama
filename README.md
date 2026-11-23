@@ -1,10 +1,12 @@
 # Small Yokohama · スモール横浜
 
-[日本語](README.ja.md) · [Study area on a map](scope/waterfront.geojson) · [System design](docs/design.md) · [Research and sources](docs/research.md)
+[日本語](README.ja.md) · [Development stack and data](docs/technology.md) · [Study area on a map](scope/waterfront.geojson) · [System design](docs/design.md) · [Research and sources](docs/research.md)
 
 Watch a blue articulated bus turn behind a warehouse, then pan along the piers to Yamashita Park. **Small Yokohama** is a design for a zoomable, illustrated miniature of the waterfront from Yokohama Station through Minato Mirai to Motomachi-Chukagai. This repository contains the feasibility study, the proposed architecture and a map of the study area. The viewer and live feed integration are planned.
 
 ## How it would work
+
+The viewer uses TypeScript and OpenSeadragon. Python prepares the PLATEAU geometry, controls Blender and collects municipal bus reports. The developer guide lists the upstream repositories and the exact data products to obtain for the four-tile pilot. [Development stack and data](docs/technology.md)
 
 A fixed camera turns Yokohama's PLATEAU city model into an illustration. A second image from the same camera records how far away each surface is. Together they let a moving bus disappear behind a building at the correct moment. The browser fetches only the parts of the drawing in view. [System design](docs/design.md)
 
