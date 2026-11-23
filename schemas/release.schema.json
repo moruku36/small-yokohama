@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://small-yokohama.local/schemas/release.schema.json",
+  "title": "Small Yokohama Release Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "releaseId",
+    "createdAt",
+    "sceneSource",
+    "sceneNotice",
+    "cameraPath",
+    "variants",
+    "layers",
+    "featuresPath",
+    "landmarksPath",
+    "qaReportPath",
+    "credits"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "releaseId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "sceneSource": {
+      "type": "string",
+      "enum": ["documented-proxy", "plateau-fy2024"]
+    },
+    "sceneNotice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ja", "en"],
+      "properties": {
+        "ja": { "type": "string" },
+        "en": { "type": "string" }
+      }
+    },
+    "cameraPath": { "type": "string" },
+    "variants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plain", "illustrated"],
+      "properties": {
+        "plain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dziPath"],
+          "properties": {
+            "dziPath": { "type": "string" }
+          }
+        },
+        "illustrated": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dziPath"],
+          "properties": {
+            "dziPath": { "type": "string" }
+          }
+        }
+      }
+    },
+    "layers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["depth", "surfaceId", "roadElevation", "waterMask"],
+      "properties": {
+        "depth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tilePattern", "encoding", "nearM", "farM"],
+          "properties": {
+            "tilePattern": { "type": "string" },
+            "encoding": { "type": "string", "const": "rgba8-rg16-depth-b-surfaceKind" },
+            "nearM": { "type": "number" },
+            "farM": { "type": "number" }
+          }
+        },
+        "surfaceId": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tilePattern", "encoding"],
+          "properties": {
+            "tilePattern": { "type": "string" },
+            "encoding": { "type": "string", "const": "rgba8-rgb24-featureId" }
+          }
+        },
+        "roadElevation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decks"],
+          "properties": {
+            "decks": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["tilePattern", "encoding", "minM", "maxM"],
+                "properties": {
+                  "tilePattern": { "type": "string" },
+                  "encoding": { "type": "string", "const": "rgba8-rg16-elevation" },
+                  "minM": { "type": "number" },
+                  "maxM": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "waterMask": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["encoding", "surfaceKindValue"],
+          "properties": {
+            "encoding": { "type": "string" },
+            "surfaceKindValue": { "type": "integer", "const": 1 }
+          }
+        }
+      }
+    },
+    "featuresPath": { "type": "string" },
+    "landmarksPath": { "type": "string" },
+    "qaReportPath": { "type": "string" },
+    "credits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "publisher",
+          "dataset",
+          "version",
+          "retrievedAt",
+          "license",
+          "redistribution",
+          "attributionText",
+          "modifications"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "publisher": { "type": "string" },
+          "dataset": { "type": "string" },
+          "version": { "type": "string" },
+          "retrievedAt": { "type": "string" },
+          "license": { "type": "string" },
+          "redistribution": { "type": "string" },
+          "attributionText": { "type": "string" },
+          "modifications": { "type": "string" },
+          "url": { "type": "string" }
+        }
+      }
+    }
+  }
+}

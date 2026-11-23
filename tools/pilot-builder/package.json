@@ -1,0 +1,13 @@
+{
+  "name": "@small-yokohama/pilot-builder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@small-yokohama/core": "0.1.0"
+  },
+  "scripts": {
+    "build:pilot": "tsx src/build.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

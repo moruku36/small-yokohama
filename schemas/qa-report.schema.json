@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://small-yokohama.local/schemas/qa-report.schema.json",
+  "title": "Small Yokohama Pilot QA Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "releaseId",
+    "generatedAt",
+    "gcpThresholdPx",
+    "maxGcpDisplacementPx",
+    "gcpChecks",
+    "seamChecks",
+    "waterIntegrity",
+    "metrics",
+    "passed"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "releaseId": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "gcpThresholdPx": { "type": "number", "exclusiveMinimum": 0 },
+    "maxGcpDisplacementPx": { "type": "number", "minimum": 0 },
+    "gcpChecks": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "labelJa",
+          "labelEn",
+          "expectedPx",
+          "expectedPy",
+          "observedPx",
+          "observedPy",
+          "displacementPx",
+          "featureId",
+          "matched",
+          "passed"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "labelJa": { "type": "string" },
+          "labelEn": { "type": "string" },
+          "expectedPx": { "type": "number" },
+          "expectedPy": { "type": "number" },
+          "observedPx": { "type": "number" },
+          "observedPy": { "type": "number" },
+          "displacementPx": { "type": "number", "minimum": 0 },
+          "featureId": { "type": "integer", "minimum": 1 },
+          "matched": { "type": "boolean" },
+          "passed": { "type": "boolean" }
+        }
+      }
+    },
+    "seamChecks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["seamId", "orientation", "lengthPx", "meanColorDiff", "maxColorDiff", "passed"],
+        "properties": {
+          "seamId": { "type": "string" },
+          "orientation": { "type": "string", "enum": ["vertical", "horizontal"] },
+          "lengthPx": { "type": "integer", "minimum": 1 },
+          "meanColorDiff": { "type": "number", "minimum": 0 },
+          "maxColorDiff": { "type": "number", "minimum": 0 },
+          "passed": { "type": "boolean" }
+        }
+      }
+    },
+    "waterIntegrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["waterSamplePixels", "inventedBuildingPixels", "passed"],
+      "properties": {
+        "waterSamplePixels": { "type": "integer", "minimum": 0 },
+        "inventedBuildingPixels": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renderMs",
+        "tileCount",
+        "totalOutputBytes",
+        "depthBytes",
+        "illustratedDziBytes",
+        "plainDziBytes"
+      ],
+      "properties": {
+        "renderMs": { "type": "number", "minimum": 0 },
+        "tileCount": { "type": "integer", "minimum": 1 },
+        "totalOutputBytes": { "type": "integer", "minimum": 0 },
+        "depthBytes": { "type": "integer", "minimum": 0 },
+        "illustratedDziBytes": { "type": "integer", "minimum": 0 },
+        "plainDziBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "passed": { "type": "boolean" }
+  }
+}
