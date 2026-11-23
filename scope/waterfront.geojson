@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","id":"waterfront","properties":{"name":"Waterfront study area / 臨海部の計画範囲","role":"editorial-area","stroke":"#36536f","fill":"#67b6d5","fill-opacity":0.12},"geometry":{"type":"Polygon","coordinates":[[[139.618,35.461],[139.628,35.444],[139.644,35.438],[139.655,35.438],[139.657,35.448],[139.649,35.456],[139.631,35.472],[139.618,35.47],[139.618,35.461]]]}},
+    {"type":"Feature","id":"pilot","properties":{"name":"Shinko pilot / 新港の先行街区","role":"pilot","stroke":"#993c22","fill":"#e89e59","fill-opacity":0.26},"geometry":{"type":"Polygon","coordinates":[[[139.637,35.45],[139.646,35.45],[139.646,35.456],[139.637,35.456],[139.637,35.45]]]}},
+    {"type":"Feature","id":"yokohama","properties":{"name":"Yokohama Station / 横浜駅","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.6221,35.4658]}},
+    {"type":"Feature","id":"minato-mirai","properties":{"name":"Minato Mirai Station / みなとみらい駅","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.6326,35.4571]}},
+    {"type":"Feature","id":"sakuragicho","properties":{"name":"Sakuragicho Station / 桜木町駅","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.631,35.4509]}},
+    {"type":"Feature","id":"red-brick","properties":{"name":"Red Brick Warehouse / 横浜赤レンガ倉庫","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.6428,35.4526]}},
+    {"type":"Feature","id":"circle-walk","properties":{"name":"Shinko Circle Walk / 新港サークルウォーク","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.6394,35.4531]}},
+    {"type":"Feature","id":"osanbashi","properties":{"name":"Osanbashi Pier / 大さん橋","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.6486,35.4516]}},
+    {"type":"Feature","id":"yamashita","properties":{"name":"Yamashita Park / 山下公園","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.6498,35.4452]}},
+    {"type":"Feature","id":"motomachi","properties":{"name":"Motomachi-Chukagai Station / 元町・中華街駅","role":"approximate-landmark"},"geometry":{"type":"Point","coordinates":[139.6513,35.4421]}}
+  ]
+}

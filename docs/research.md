@@ -1,0 +1,35 @@
+# What Small SF does, and what Yokohama can use
+
+[日本語](research.ja.md) · [Home](../README.md) · [Design](design.md)
+
+Research snapshot, 24 November 2026. The first-party sources below establish the production method and the existence of candidate datasets. Route coverage, latency, street-level detail and production costs still need measurements in the pilot.
+
+## The original project
+
+Ari Dutilh published a detailed making-of, credits and changelog. He credits Dylan Martin's Isometric Seattle as the inspiration and describes the Small SF project as currently closed source. His public GitHub profile is available. The account, production site and making-of serve different purposes; the technical account below comes from the author. [Making-of and credits](https://smallsf.com/about) · [Map](https://smallsf.com/) · [Author](https://dutilh.net/) · [GitHub](https://github.com/aridutilh) · [Isometric Seattle](https://isometricseattle.fun/)
+
+| Part | What the author reports | Decision for Yokohama |
+| --- | --- | --- |
+| Base and camera | Google's Photorealistic 3D Tiles are rendered in a headless browser with a fixed, 45-degree orthographic camera. | Keep the projection and offline render. Use local PLATEAU geometry so the illustrated output can be built and distributed under known source terms. |
+| Illustration | Overlapping 2,048 px renders become 2,880 px drawings. A reference drawing guides the look. The author describes Higgsfield initially, then GPT Image 2. A low-disagreement cut through each overlap limits double images. | Establish an original style on a four-tile patch. Keep fixed shoreline and landmark masks. Give open water a procedural fill. |
+| Viewer and depth | OpenSeadragon pans and zooms the image. A depth render allows parts of vehicles to disappear at a building edge. Road elevation also keeps vehicles on the correct deck. | Use one camera transform for the picture, picking and overlays. Test a vehicle beneath a pedestrian deck before building the full city. |
+| Motion | SF uses 511 arrival predictions or delayed GPS, AIS for vessels, ADS-B for aircraft, OSM roads for simulated cars, and weather/satellite data for light and fog. | Give each layer its own source and timestamp. Prioritize an observed bus on the waterfront. Ship schedules, underground rail, simulated traffic and weather have different meanings and coverage. |
+
+The important Google dependency in SF is the input to its artwork. The browser viewer is OpenSeadragon. Google's tile policy and platform terms place limits on caching and creating content from Maps content. The base pipeline proposed here needs no Google Maps API key. [Small SF credits](https://smallsf.com/about#credits) · [Google 3D Tiles](https://developers.google.com/maps/documentation/tile/3d-tiles) · [Tile policies](https://developers.google.com/maps/documentation/tile/policies) · [Platform terms](https://cloud.google.com/maps-platform/terms) · [OpenSeadragon](https://openseadragon.github.io/)
+
+## Yokohama source register
+
+| Layer | What was checked | Use and outstanding check |
+| --- | --- | --- |
+| Buildings, roads, terrain and bridges | The FY2024 Yokohama catalog lists CityGML, building and road models at several levels of detail, terrain and bridges. It includes an index map. | Pin the resource, version and checksum. Inspect which meshes cover Shinko, including the deck. Use LOD1 fallback and record missing detail. Follow the dataset's PLATEAU site policy, resource-specific notices, attribution and modification credit. [Dataset](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024) · [Index map (PDF)](https://assets.cms.plateau.reearth.io/assets/77/ac1e93-e863-47f5-908f-313abc462ddd/14100_indexmap_op.pdf) · [Policy](https://www.mlit.go.jp/plateau/site-policy/) |
+| Municipal bus geometry and schedule | ODPT lists the GTFS-JP edition effective 1 November 2026. The city's Bayside Blue page connects Yokohama Station, Minato Mirai and the Yamashita area. | Select the edition valid on the service date. Check route shape, both directions, trip IDs and calendar exceptions. Developer registration and the basic and specific terms apply. [Catalog](https://ckan.odpt.org/dataset/yokohama_municipal_bus) · [Route operator](https://www.city.yokohama.lg.jp/kotsu/bus/norikata/baysideblue.html) |
+| Bus reports | The municipal GTFS-RT resource explicitly offers VehiclePosition as Protocol Buffers and documents an access token. | Fetch in one server-side collector. The catalog confirms the product, but we have not sampled a credentialed response or matched a Bayside Blue trip. Check freshness, quotas, display, caching and retention against the operator terms before release. [VehiclePosition resource](https://ckan.odpt.org/dataset/b_bus_gtfs_rt-yokohamamunicipal/resource/cafd8fda-f99b-4167-9c14-c9e35cc7c42f) · [RT catalog](https://ckan.odpt.org/dataset/b_bus_gtfs_rt-yokohamamunicipal) · [ODPT terms](https://developer.odpt.org/terms) |
+| Harbor | Yokohama publishes planned cruise calls; the Sea Bass operator publishes a water-bus timetable. These describe planned activity and times. | Begin with a scheduled call at its berth or a link to the operator. Check reuse of timetable contents and changes/cancellations. Live tracks require a separately permitted AIS provider and a local coverage trial. [Port calls](https://www.city.yokohama.lg.jp/kanko-bunka/minato/kyakusen/nyuko/2026.html) · [Sea Bass](https://yokohama-cruising.jp/seabass/timetable/) |
+| Roads and atmosphere | OSM supplies street topology under ODbL. JMA publishes AMeDAS observations. | For later simulated traffic, preserve OSM attribution and review derivative database terms. Begin with calculated daylight. A later weather layer would identify the station, observation time, delivery method and reuse terms. [OSM terms](https://www.openstreetmap.org/copyright) · [JMA observations](https://www.jma.go.jp/bosai/amedas/) · [JMA policy](https://www.jma.go.jp/jma/kishou/info/coment.html) |
+
+Keep a source record per release with publisher, resource/version, retrieval date, allowed redistribution and retention, credit text, edits and output bundle. Put credits in the viewer and next to any dataset distributed. MIT covers original project material. The initial repository includes only research, design and hand-defined study geometry.
+
+## Implementation references
+
+- Use the published DZI interface for the image pyramid and generate the levels offline with libvips. [OpenSeadragon DZI example](https://openseadragon.github.io/examples/tilesource-dzi/) · [libvips dzsave](https://www.libvips.org/API/current/method.Image.dzsave.html)
+- Use the GTFS definitions to interpret service days, positions and timestamps. The freshness thresholds in our design are pilot policy informed by the best practices. [Schedule](https://gtfs.org/documentation/schedule/reference/) · [Realtime](https://gtfs.org/documentation/realtime/reference/) · [Realtime best practices](https://gtfs.org/documentation/realtime/realtime-best-practices/)
