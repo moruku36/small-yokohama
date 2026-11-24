@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 1, "row": -1, "originPx": [1920, -1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "野毛・日ノ出町駅・大岡川・都橋商店街・福富町・野毛山公園・桜木町駅西口周辺",
+  "heroNameEn": "Noge, Hinodecho Station, Ooka River, Miyakobashi Shotengai, Fukutomicho, Nogeyama Park & Sakuragicho West",
+  "baseRenderPath": "data/tile-renders/tile_1_-1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_1_-1-z18.png (3328x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_1_-1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_1_1_illustrated_1795560278494.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8869
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Ooka River channel teal #226276 + Nogeyama school pool turquoise",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T07:45:22+09:00"
+}

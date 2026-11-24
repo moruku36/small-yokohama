@@ -1,0 +1,22 @@
+{
+  "tile": { "col": -1, "row": -1, "originPx": [-1920, -1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "石川町駅・石川町ジャンクション・中村川・山手イタリア山庭園・山手学園街・寿町／不老町街区",
+  "heroNameEn": "Ishikawacho Station, Ishikawa-cho JCT, Nakamura River, Yamate Italian Garden, Yamate Schools & Kotobukicho/Furocho Grid",
+  "baseRenderPath": "data/tile-renders/tile_-1_-1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_-1_-1-z18.png (3072x3072, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_-1_-1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_1_1_final_1795544427225.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8139
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Nakamura River channel & viaduct-edge water teal #226276 + school swimming pool",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T03:21:02+09:00"
+}
