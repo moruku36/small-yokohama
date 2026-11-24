@@ -1,0 +1,22 @@
+{
+  "tile": { "col": -1, "row": 0, "originPx": [-1920, 0], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "山下公園（陸側・世界の広場・沈床花壇）・横浜マリンタワー・横浜中華街・横浜スタジアム南外周",
+  "heroNameEn": "Yamashita Park (Rose Garden & Fountain), Yokohama Marine Tower, Yokohama Chinatown & Yokohama Stadium Rim",
+  "baseRenderPath": "data/tile-renders/tile_-1_0_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_-1_0-z18.png (3072x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_-1_0.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_1_0_illustrated_1795502236171.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8408
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Yamashita Bay & Nakamura/Horikawa canal teal #226276",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T15:38:09+09:00"
+}

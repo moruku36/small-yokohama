@@ -1,0 +1,22 @@
+{
+  "tile": { "col": -2, "row": 1, "originPx": [-3840, 1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "山下ふ頭南・新山下運河・はしけ泊地・首都高湾岸分岐・横浜港南東海域",
+  "heroNameEn": "Yamashita Pier South, Shin-Yamashita Canal, Moored Barge Basin & Shuto Expressway Viaduct",
+  "baseRenderPath": "data/tile-renders/tile_-2_1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_-2_1-z18.png (3072x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_-2_1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_2_1_1795503557760.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.7722
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + barge basin & canal teal #226276",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T16:00:12+09:00"
+}

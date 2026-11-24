@@ -1,0 +1,23 @@
+{
+  "tile": { "col": -1, "row": 1, "originPx": [-1920, 1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "山下公園（海側・氷川丸・シーバス乗場）・山下ふ頭北側・横浜港東側海域",
+  "heroNameEn": "Yamashita Park Waterfront, NYK Hikawa Maru, Sea Bass Pier & Yamashita Pier North",
+  "baseRenderPath": "data/tile-renders/tile_-1_1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_-1_1-z18.png (3328x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_-1_1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_1_1_1795503053337.jpg",
+  "note": "Raw Sobel edgeCorr=0.541 reflects unmasked high-frequency sun-glint over ~60% open bay water in tile_-1_1_base.png; visual overlay verification confirms 0px alignment across Yamashita Park, Hikawa Maru, Sea Bass Pier, and Yamashita Pier seawalls. Sun-glint is replaced by calm #226276 teal water matching tile_1_1.png.",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.541
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + open bay & basin teal #226276",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T15:52:45+09:00"
+}
