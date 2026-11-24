@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 2, "row": -1, "originPx": [3840, -1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "紅葉坂・掃部山公園・野毛山・伊勢山皇大神宮・県立音楽堂・戸部南寄り",
+  "heroNameEn": "Momijizaka, Kamonyama Park, Nogeyama Ridge, Iseyama Kotaijingu Shrine, Prefectural Music Hall & South Tobe",
+  "baseRenderPath": "data/tile-renders/tile_2_-1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_2_-1-z18.png (3072x3072, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_2_-1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_2_1_final_1795562227144.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8705
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check (inland Momijizaka/Kamonyama ridge — no rivers/canals; three outdoor school pools & park pond rendered in turquoise/teal)",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T08:17:48+09:00"
+}

@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 3, "row": -1, "originPx": [5760, -1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "戸部駅・国道1号・石崎川・西区中央内陸（西戸部・藤棚・中央・杉山神社周辺）",
+  "heroNameEn": "Tobe Station, Route 1, Ishizaki-gawa Canal & Central Nishi-ku Inland (Nishitobe, Fujidana & Chuo)",
+  "baseRenderPath": "data/tile-renders/tile_3_-1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_3_-1-z18.png (3072x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_3_-1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_3_1_1795562985140.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8888
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Ishizaki-gawa Canal bottom-right teal #226276 + three outdoor school swimming pools",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T08:30:25+09:00"
+}

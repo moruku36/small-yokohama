@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 4, "row": -1, "originPx": [7680, -1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "平沼橋駅・東京ガス球形ガスホルダー・横浜イングリッシュガーデン・帷子川・石崎川・岡野公園・西横浜寄り内陸",
+  "heroNameEn": "Hiranumabashi Station, Tokyo Gas Spherical Holders, Yokohama English Garden, Katabira & Ishizaki-gawa Canals & Okano Park",
+  "baseRenderPath": "data/tile-renders/tile_4_-1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_4_-1-z18.png (3328x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_4_-1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_4_1_final_1795563323332.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8605
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Katabira River (glint cleared), Shin-Tamagawa branch & Ishizaki-gawa Canal teal #226276 + school pools",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T08:36:10+09:00"
+}
