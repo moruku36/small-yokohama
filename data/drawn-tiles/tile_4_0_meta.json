@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 4, "row": 0, "originPx": [7680, 0], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "横浜駅（東口・西口）・そごう横浜・横浜スカイビル・JR横浜タワー・帷子川・新田間川",
+  "heroNameEn": "Yokohama Station (East & West Exits), Sogo Yokohama, Yokohama Sky Building, JR Yokohama Tower & Katabira / Shin-Tamagawa Canals",
+  "baseRenderPath": "data/tile-renders/tile_4_0_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_4_0-z18.png (3328x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_4_0.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_4_0_v3_1795541914637.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8837
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Katabira River, Shin-Tamagawa & Saiwai-gawa canals teal #226276",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T02:39:13+09:00"
+}

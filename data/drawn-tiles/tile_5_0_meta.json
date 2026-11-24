@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 5, "row": 0, "originPx": [9600, 0], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "横浜駅北西・鶴屋町・反町公園・東横フラワー緑道・新田間川・首都高三ツ沢線・沢渡高台",
+  "heroNameEn": "Yokohama Station NW, Tsuruyacho, Tanmachi Park, Toyoko Flower Green Road, Shin-Tamagawa Canal, Shuto Expressway K2 & Sawatari Hillside",
+  "baseRenderPath": "data/tile-renders/tile_5_0_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_5_0-z18.png (3072x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_5_0.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_5_0_drawn_v3_1795543032761.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8573
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Shin-Tamagawa Canal & western branch teal #226276 (glint cleared)",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T02:57:43+09:00"
+}

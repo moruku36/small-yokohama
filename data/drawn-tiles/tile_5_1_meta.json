@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 5, "row": 1, "originPx": [9600, 1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "西神奈川・反町北・栗田谷・斎藤分町・横浜上麻生道路・東白楽南寄り住宅高台",
+  "heroNameEn": "Nishi-Kanagawa, North Tanmachi, Kuritaya, Saitobuncho, Yokohama-Kamiasao Avenue & Higashi-Hakuraku South Hillside",
+  "baseRenderPath": "data/tile-renders/tile_5_1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_5_1-z18.png (3072x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_5_1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_5_1_1795543485392.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8815
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check (inland hillside — no harbor/canal water; two school swimming pools rendered in crisp turquoise)",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-25T03:05:18+09:00"
+}
