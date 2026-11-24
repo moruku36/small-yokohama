@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 2, "row": 0, "originPx": [3840, 0], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "みなとみらい駅・横浜ランドマークタワー・クイーンズスクエア・帆船日本丸・横浜美術館・MARK IS・ぴあアリーナMM",
+  "heroNameEn": "Minato Mirai Station, Yokohama Landmark Tower, Queen's Square Yokohama, Nippon Maru, Yokohama Museum of Art & Pia Arena MM",
+  "baseRenderPath": "data/tile-renders/tile_2_0_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_2_0-z18.png (3072x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_2_0.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_2_0_drawn_final_1795507520951.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.8823
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + Nippon Maru dry dock & canal teal #226276",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T17:06:11+09:00"
+}

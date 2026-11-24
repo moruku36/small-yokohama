@@ -1,0 +1,23 @@
+{
+  "tile": { "col": 2, "row": 1, "originPx": [3840, 1920], "sizePx": 2048 },
+  "author": "moruku36",
+  "heroNameJa": "パシフィコ横浜・ヨコハマ グランド インターコンチネンタル ホテル・ぷかりさん橋・臨港パーク・みなとみらいヘリポート",
+  "heroNameEn": "Pacifico Yokohama, Yokohama Grand InterContinental Hotel, Pukari Sanbashi Pier, Rinko Park & Minato Mirai Heliport",
+  "baseRenderPath": "data/tile-renders/tile_2_1_base.png",
+  "aerialMosaic": "data/gsi-aerial/tile_2_1-z18.png (3072x3328, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_2_1.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_2_1_v2_1795508041587.jpg",
+  "note": "Raw Sobel edgeCorr=0.6783 reflects ~55% open-bay aerial sun-glint glare in tile_2_1_base.png; visual overlay verification confirms 0px registration across InterContinental, Pacifico Yokohama, Pukari Sanbashi, Rinko Park seawall, and Heliport. Open bay water cleanly unified to #226276.",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.6783
+  },
+  "waterMask": "Orthographic GSI z=18 aerial base check + open Yokohama Bay & tidal pond teal #226276",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T17:14:53+09:00"
+}
