@@ -1,0 +1,22 @@
+{
+  "tile": { "col": 0, "row": 0, "originPx": [0, 0], "sizePx": 2048 },
+  "heroNameJa": "横浜スタジアム・横浜公園・日本大通り・横浜三塔（県庁・開港記念会館・税関）・象の鼻・馬車道",
+  "heroNameEn": "Yokohama Stadium, Yokohama Park, Nihon Odori, Yokohama Three Towers, Zou-no-hana Park & Bashamichi",
+  "baseRenderPath": "data/tile-renders/tile_0_0_base.png",
+  "aerialMosaic": "data/gsi-aerial/shinko-z18.png (4608x4608, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_0_0.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_0_0_drawn_1795493135343.jpg",
+  "note": "Minor block swap between King's Tower silhouette and adjacent green-domed court block along Nihon Odori left as-is after gemini-3.1-flash-image hit 429 quota during polish attempt; footprints and edge registration remain 0px-aligned.",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.858
+  },
+  "waterMask": "3D SURFACE_KIND.WATER exact pixel composite with 2px seawall feathering",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T13:07:39+09:00"
+}

@@ -3,6 +3,7 @@ import {
   type CameraManifest,
   type GroundControlPoint,
   type Landmark,
+  type PoiRecord,
   type QaReport,
   type ReleaseManifest,
   type ReleasePointer,
@@ -25,6 +26,7 @@ export interface LoadedReleaseBundle {
   features: SceneFeatureRecord[];
   featureById: Map<number, SceneFeatureRecord>;
   landmarks: Landmark[];
+  pois: PoiRecord[];
   gcps: GroundControlPoint[];
   deckTestPoint: { lon: number; lat: number; elevationM: number; deckId: string };
   qaReport: QaReport;
@@ -85,6 +87,7 @@ export async function loadCurrentRelease(): Promise<LoadedReleaseBundle> {
     fetchJson<SceneFeatureRecord[]>(`${baseReleaseUrl}/${release.featuresPath}`),
     fetchJson<{
       landmarks: Landmark[];
+      pois?: PoiRecord[];
       gcps: GroundControlPoint[];
       deckTestPoint: { lon: number; lat: number; elevationM: number; deckId: string };
     }>(`${baseReleaseUrl}/${release.landmarksPath}`),
@@ -125,6 +128,7 @@ export async function loadCurrentRelease(): Promise<LoadedReleaseBundle> {
     features,
     featureById,
     landmarks: landmarksPayload.landmarks,
+    pois: landmarksPayload.pois ?? [],
     gcps: landmarksPayload.gcps,
     deckTestPoint: landmarksPayload.deckTestPoint,
     qaReport,

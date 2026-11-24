@@ -7,3 +7,7 @@ viewer/public/releases/
 *.pyc
 .pytest_cache/
 coverage/
+data/gsi-aerial/
+data/tile-renders/
+data/drawn-tiles/*_composited.png
+data/drawn-tiles/*_overlay_check.png

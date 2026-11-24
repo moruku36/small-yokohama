@@ -75,10 +75,11 @@
     "waterIntegrity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["waterSamplePixels", "inventedBuildingPixels", "passed"],
+      "required": ["waterSamplePixels", "inventedBuildingPixels", "voidPixels", "passed"],
       "properties": {
         "waterSamplePixels": { "type": "integer", "minimum": 0 },
         "inventedBuildingPixels": { "type": "integer", "minimum": 0 },
+        "voidPixels": { "type": "integer", "minimum": 0 },
         "passed": { "type": "boolean" }
       }
     },

@@ -9,6 +9,9 @@
     "viewer"
   ],
   "scripts": {
+    "fetch:osm": "npm.cmd --workspace @small-yokohama/pilot-builder run fetch:osm",
+    "fetch:aerial": "npm.cmd --workspace @small-yokohama/pilot-builder run fetch:aerial",
+    "render:tile": "npm.cmd --workspace @small-yokohama/pilot-builder run render:tile --",
     "build:pilot": "npm.cmd --workspace @small-yokohama/pilot-builder run build:pilot",
     "dev": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run dev",
     "build": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run build",

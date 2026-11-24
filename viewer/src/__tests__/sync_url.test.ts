@@ -39,23 +39,36 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
   it("round-trips share URL parameters and clamps out-of-bounds viewports", () => {
     const state = createInitialViewerState(
       cam,
-      "?lang=en&v=plain&m=scheduled&x=2400&y=1700&z=2.8&sun=17.25&depth=1&gcp=1",
+      "?lang=en&theme=dark&v=plain&m=scheduled&x=2400&y=1700&z=2.8&sun=17.25&buses=0&labels=0&depth=1&gcp=1&deck=1",
       false,
     );
     expect(state.lang).toBe("en");
+    expect(state.theme).toBe("dark");
     expect(state.variant).toBe("plain");
     expect(state.feedPreset).toBe("scheduled");
     expect(state.cameraView).toEqual({ centerImgX: 2400, centerImgY: 1700, zoom: 2.8 });
+    expect(state.showBuses).toBe(false);
+    expect(state.showBoats).toBe(true);
+    expect(state.showLabels).toBe(false);
     expect(state.showDepthMap).toBe(true);
     expect(state.showGcps).toBe(true);
+    expect(state.showDeckTestPoint).toBe(true);
 
     const url = serializeShareUrl(state, "https://small-yokohama.example/");
     const reparsed = createInitialViewerState(cam, new URL(url).search, false);
+    expect(reparsed.theme).toBe("dark");
     expect(reparsed.variant).toBe("plain");
     expect(reparsed.feedPreset).toBe("scheduled");
+    expect(reparsed.showBuses).toBe(false);
+    expect(reparsed.showLabels).toBe(false);
+    expect(reparsed.showDeckTestPoint).toBe(true);
     expect(reparsed.cameraView.centerImgX).toBeCloseTo(2400, 1);
 
-    // Out-of-bounds clamping
+    // Defaults + out-of-bounds clamping
+    const defaults = createInitialViewerState(cam, "", false);
+    expect(defaults.theme).toBe("light");
+    expect(defaults.cameraView.zoom).toBe(2.25);
+
     const clamped = createInitialViewerState(cam, "?x=-9999&y=99999&z=999", false);
     expect(clamped.cameraView.centerImgX).toBe(0);
     expect(clamped.cameraView.centerImgY).toBe(cam.imageHeightPx);

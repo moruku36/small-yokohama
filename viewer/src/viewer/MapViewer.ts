@@ -1,25 +1,32 @@
 import OpenSeadragon from "openseadragon";
 import {
+  SURFACE_KIND,
   computeYokohamaSun,
   imagePxToNdc,
+  imageToLocalOnPlane,
   localToImage,
+  localToWgs84,
   wgs84ToLocal,
   type CameraManifest,
   type Landmark,
   type PortCallRecord,
+  type SceneFeatureRecord,
 } from "@small-yokohama/core";
 import { pickFeatureIdAtImagePx, type LoadedReleaseBundle } from "../data/releaseLoader.js";
 import type { ResolvedFeedState, ResolvedVehicle } from "../data/vehicleFeed.js";
 import type { MapVariant, ViewerState } from "../state.js";
+import type { ViewportImageBounds } from "../ui/LabelLayer.js";
 import { WebGLOverlay } from "./WebGLOverlay.js";
 
 export interface MapViewerCallbacks {
   onSelectVehicle: (rv: ResolvedVehicle) => void;
   onSelectLandmark: (lm: Landmark) => void;
+  onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => void;
   onSelectPortCall: (pc: PortCallRecord) => void;
   onClearSelection: () => void;
   onViewChanged: (centerImgX: number, centerImgY: number, zoom: number) => void;
   onTogglePlay: () => void;
+  onUserInteract?: () => void;
 }
 
 export class MapViewer {
@@ -79,7 +86,17 @@ export class MapViewer {
 
     this.osd.addHandler("canvas-click", (evt) => {
       if (!evt.quick || !evt.position) return;
+      this.callbacks.onUserInteract?.();
       this.handleClick(evt.position);
+    });
+    this.osd.addHandler("canvas-drag", () => {
+      this.callbacks.onUserInteract?.();
+    });
+    this.osd.addHandler("canvas-scroll", () => {
+      this.callbacks.onUserInteract?.();
+    });
+    this.osd.addHandler("canvas-pinch", () => {
+      this.callbacks.onUserInteract?.();
     });
 
     this.resizeObserver = new ResizeObserver(() => {
@@ -114,12 +131,25 @@ export class MapViewer {
   resetView(): void {
     this.applyCameraView(
       {
-        centerImgX: this.camera.imageWidthPx * 0.56,
-        centerImgY: this.camera.imageHeightPx * 0.48,
-        zoom: 1.6,
+        centerImgX: this.camera.imageWidthPx * 0.66,
+        centerImgY: this.camera.imageHeightPx * 0.59,
+        zoom: 2.25,
       },
       this.state.reducedMotion,
     );
+  }
+
+  getViewportInfo(): ViewportImageBounds | null {
+    if (!this.osd.viewport) return null;
+    const bounds = this.getViewportImageBounds();
+    if (!bounds) return null;
+    return {
+      topLeft: bounds.topLeft,
+      bottomRight: bounds.bottomRight,
+      widthCssPx: bounds.cssWidth,
+      heightCssPx: bounds.cssHeight,
+      zoom: this.osd.viewport.getZoom(true),
+    };
   }
 
   zoomBy(factor: number): void {
@@ -231,11 +261,11 @@ export class MapViewer {
       showTileGrid: this.state.showTileGrid,
       showGcps: this.state.showGcps,
       showDeckTestPoint: this.state.showDeckTestPoint,
-      vehicles: this.feedState?.vehicles ?? [],
+      vehicles: this.state.showBuses ? (this.feedState?.vehicles ?? []) : [],
       selectedVehicleId,
       gcps: this.bundle.gcps,
       deckTestPoint: this.bundle.deckTestPoint,
-      portCalls: this.feedState?.portCalls ?? [],
+      portCalls: this.state.showBoats ? (this.feedState?.portCalls ?? []) : [],
     });
   }
 
@@ -244,7 +274,7 @@ export class MapViewer {
     const imgPt = this.osd.viewport.viewerElementToImageCoordinates(viewerPos);
 
     // 1. Check vehicles first
-    if (this.feedState) {
+    if (this.feedState && this.state.showBuses) {
       for (const rv of this.feedState.vehicles) {
         const vImg = localToImage(
           this.camera,
@@ -258,8 +288,10 @@ export class MapViewer {
           return;
         }
       }
+    }
 
-      // 2. Check scheduled port calls
+    // 2. Check scheduled port calls
+    if (this.feedState && this.state.showBoats) {
       for (const pc of this.feedState.portCalls) {
         const pcImg = localToImage(
           this.camera,
@@ -281,6 +313,29 @@ export class MapViewer {
       const lm = this.bundle.landmarks.find((l) => l.featureId === fid);
       if (lm) {
         this.callbacks.onSelectLandmark(lm);
+        return;
+      }
+      const feat = this.bundle.featureById.get(fid);
+      if (
+        feat &&
+        feat.featureId > 1 &&
+        feat.surfaceKind !== SURFACE_KIND.WATER &&
+        feat.surfaceKind !== SURFACE_KIND.GROUND
+      ) {
+        let lon = feat.lon;
+        let lat = feat.lat;
+        if (lon === undefined || lat === undefined) {
+          const local = imageToLocalOnPlane(
+            this.camera,
+            imgPt.x,
+            imgPt.y,
+            Math.max(0, feat.heightM * 0.5),
+          );
+          const wgs = localToWgs84(this.camera, local);
+          lon = wgs.lon;
+          lat = wgs.lat;
+        }
+        this.callbacks.onSelectFeature(feat, lon, lat);
         return;
       }
     }

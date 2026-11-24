@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -7,35 +7,68 @@ import {
   type ReleaseManifest,
   type ReleasePointer,
 } from "@small-yokohama/core";
-import { writeDziPyramid, writeLosslessDataTiles } from "./dzi.js";
+import { applyDrawnTileOverride, exportBaseTilePng } from "./drawnTiles.js";
+import { writeDownsampledPreviewPng, writeDziPyramid, writeLosslessDataTiles } from "./dzi.js";
 import { buildPilotFixtures } from "./fixtures.js";
+import { buildShinkoOsmScene } from "./osmSceneBuilder.js";
 import { runPilotQa } from "./qa.js";
-import { renderWorkingTile, type RenderedTileBuffers } from "./rasterizer.js";
+import {
+  buildShadowMap,
+  loadGsiAerialMosaic,
+  renderWorkingTile,
+  type RenderedTileBuffers,
+} from "./rasterizer.js";
 import { stitchWorkingTiles } from "./seam.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
+const OSM_DATA_PATH = join(REPO_ROOT, "data", "shinko-osm.json");
+const TILE_RENDERS_DIR = join(REPO_ROOT, "data", "tile-renders");
+const DRAWN_TILES_DIR = join(REPO_ROOT, "data", "drawn-tiles");
+const GSI_AERIAL_DIR = join(REPO_ROOT, "data", "gsi-aerial");
 const RELEASES_ROOT = join(REPO_ROOT, "viewer", "public", "releases");
 const RELEASE_ID = "pilot-shinko-v1";
 const RELEASE_DIR = join(RELEASES_ROOT, RELEASE_ID);
 
 function main(): void {
   const t0 = performance.now();
-  console.log(`[pilot-builder] Building Shinko pilot release: ${RELEASE_ID}`);
+  const hasOsm = existsSync(OSM_DATA_PATH);
+  console.log(`[pilot-builder] Building Shinko pilot release: ${RELEASE_ID} (source=${hasOsm ? "OpenStreetMap ODbL" : "documented-proxy"})`);
 
-  const scene = buildShinkoPilotScene();
+  const scene = hasOsm ? buildShinkoOsmScene(OSM_DATA_PATH) : buildShinkoPilotScene();
   const { camera, triangles } = scene;
-  console.log(`[pilot-builder] Scene triangles: ${triangles.length}, output: ${camera.imageWidthPx}x${camera.imageHeightPx}`);
+  const aerial = loadGsiAerialMosaic(GSI_AERIAL_DIR);
+  const shadowStart = performance.now();
+  const shadowMap = buildShadowMap(triangles);
+  console.log(
+    `[pilot-builder] Scene triangles: ${triangles.length}, shadowMap=${shadowMap.size}x${shadowMap.size} (${(performance.now() - shadowStart).toFixed(0)} ms), aerial=${aerial ? `${aerial.width}x${aerial.height}` : "none"}, output: ${camera.imageWidthPx}x${camera.imageHeightPx}`,
+  );
+
+  // Optional dev shortcut: `--tile col,row` renders just 1 working tile for fast iteration
+  const tileArgIdx = process.argv.indexOf("--tile");
+  if (tileArgIdx !== -1 && process.argv[tileArgIdx + 1]) {
+    const [colStr, rowStr] = process.argv[tileArgIdx + 1]!.split(",");
+    const col = Number(colStr);
+    const row = Number(rowStr);
+    const single = renderWorkingTile(camera, triangles, col, row, shadowMap, aerial);
+    const basePath = exportBaseTilePng(TILE_RENDERS_DIR, single);
+    console.log(`[pilot-builder] Rendered single tile (${col},${row}) (${single.width}x${single.height}) -> ${basePath}`);
+    return;
+  }
 
   // Step 1: Render 2x2 overlapping working tiles (2048x2048 each, 128px overlap)
   const workingTiles: RenderedTileBuffers[] = [];
+  let drawnCount = 0;
   for (let row = 0; row < camera.workingGrid.rows; row++) {
     for (let col = 0; col < camera.workingGrid.cols; col++) {
       const tileStart = performance.now();
-      const tile = renderWorkingTile(camera, triangles, col, row);
+      const tile = renderWorkingTile(camera, triangles, col, row, shadowMap, aerial);
+      exportBaseTilePng(TILE_RENDERS_DIR, tile);
+      const override = applyDrawnTileOverride(DRAWN_TILES_DIR, tile);
+      if (override.applied) drawnCount++;
       workingTiles.push(tile);
       console.log(
-        `[pilot-builder] Rendered working tile (${col},${row}) origin=(${tile.originPxX},${tile.originPxY}) in ${(performance.now() - tileStart).toFixed(0)} ms`,
+        `[pilot-builder] Rendered working tile (${col},${row}) origin=(${tile.originPxX},${tile.originPxY}) in ${(performance.now() - tileStart).toFixed(0)} ms${override.applied ? " [drawn]" : ""}`,
       );
     }
   }
@@ -60,6 +93,20 @@ function main(): void {
     stitched.height,
     stitched.illustratedRgba,
     camera.dzi,
+  );
+  writeDownsampledPreviewPng(
+    join(RELEASE_DIR, "preview-illustrated.png"),
+    stitched.width,
+    stitched.height,
+    stitched.illustratedRgba,
+    1024,
+  );
+  writeDownsampledPreviewPng(
+    join(RELEASE_DIR, "preview-plain.png"),
+    stitched.width,
+    stitched.height,
+    stitched.plainRgba,
+    1024,
   );
 
   const depthBytes = writeLosslessDataTiles(
@@ -108,14 +155,15 @@ function main(): void {
     8.0,
   );
 
-  // Step 5: Write manifests, features, landmarks, QA report, and fixtures
+  // Step 5: Write manifests, features, landmarks/POIs, QA report, and fixtures
   writeFileSync(join(RELEASE_DIR, "camera.json"), JSON.stringify(camera, null, 2));
-  writeFileSync(join(RELEASE_DIR, "features.json"), JSON.stringify(SHINKO_FEATURES, null, 2));
+  writeFileSync(join(RELEASE_DIR, "features.json"), JSON.stringify(scene.features ?? SHINKO_FEATURES, null, 2));
   writeFileSync(
     join(RELEASE_DIR, "landmarks.json"),
     JSON.stringify(
       {
         landmarks: scene.landmarks,
+        pois: scene.pois ?? [],
         gcps: scene.gcps,
         deckTestPoint: scene.deckTestPoint,
       },
@@ -138,8 +186,16 @@ function main(): void {
     createdAt: new Date().toISOString(),
     sceneSource: "documented-proxy",
     sceneNotice: {
-      ja: "新港パイロット（赤レンガ倉庫・新港サークルウォーク）：PLATEAU FY2024 導入前の検証用ドキュメント明示プロキシ形状を使用しています。",
-      en: "Shinko Pilot (Red Brick Warehouse & Circle Walk): using documented proxy 3D geometry in EPSG:6677 pending FY2024 PLATEAU CityGML ingestion.",
+      ja: hasOsm
+        ? drawnCount > 0
+          ? `新港〜みなとみらいパイロット（${drawnCount}/4 タイル Small SF 風イラスト仕上げ済）：OpenStreetMap 実測の海岸線・建物・道路・POI (ODbL 1.0) を EPSG:6677 で立体描画しています。`
+          : "新港〜みなとみらいパイロット：OpenStreetMap 実測の海岸線・建物・道路・POI (ODbL 1.0) を EPSG:6677 で立体描画しています。"
+        : "新港パイロット（赤レンガ倉庫・新港サークルウォーク）：PLATEAU FY2024 導入前の検証用ドキュメント明示プロキシ形状を使用しています。",
+      en: hasOsm
+        ? drawnCount > 0
+          ? `Shinko–Minato Mirai Pilot (${drawnCount}/4 Hero Tile illustrated in Small SF style): rendered in EPSG:6677 from real OpenStreetMap coastlines, footprints, streets & POIs (ODbL 1.0).`
+          : "Shinko–Minato Mirai Pilot: rendered in EPSG:6677 from real OpenStreetMap coastlines, building footprints, streets & POIs (ODbL 1.0)."
+        : "Shinko Pilot (Red Brick Warehouse & Circle Walk): using documented proxy 3D geometry in EPSG:6677 pending FY2024 PLATEAU CityGML ingestion.",
     },
     cameraPath: "camera.json",
     variants: {
@@ -209,8 +265,20 @@ function main(): void {
         license: "ODbL 1.0",
         redistribution: "Open Database License attribution required",
         attributionText: "© OpenStreetMap contributors (ODbL)",
-        modifications: "Used as shoreline reference and vector mask pipeline target.",
+        modifications: "Used for coastline, building footprints, multipolygons, roads, parks & POIs.",
         url: "https://osmdata.openstreetmap.de/data/land-polygons.html",
+      },
+      {
+        id: "gsi-japan-seamlessphoto",
+        publisher: "Geospatial Information Authority of Japan (国土地理院)",
+        dataset: "GSI Seamless Photo (地理院タイル シームレス写真 z=18)",
+        version: "2026-11",
+        retrievedAt: "2026-11-24",
+        license: "GSI Terms of Use (出典明記で自由利用可)",
+        redistribution: "Attribution required: 出典 国土地理院（シームレス写真）",
+        attributionText: "国土地理院（シームレス写真）",
+        modifications: "Orthorectified onto 3D ground parcels, plazas, parking lots & flat rooftops.",
+        url: "https://maps.gsi.go.jp/development/ichiran.html",
       },
       {
         id: "odpt-yokohama-bus",

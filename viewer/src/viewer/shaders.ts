@@ -70,10 +70,19 @@ void main() {
 
   vec4 colOut = vec4(0.0);
 
-  // Subtle Yokohama sun lighting tint (stronger over water/sky feel)
+  // Subtle Yokohama sun lighting tint + warm evening/night window glow on buildings & bridges
   if (u_sunTint.a > 0.001) {
     float waterBoost = surfaceKind == 1 ? 1.15 : 0.85;
     colOut = vec4(u_sunTint.rgb, clamp(u_sunTint.a * waterBoost, 0.0, 0.65));
+    if (u_sunTint.a > 0.16 && u_sunTint.b > u_sunTint.r && (surfaceKind == 4 || surfaceKind == 5)) {
+      float wx = mod(floor(v_imgPx.x * 0.25), 5.0);
+      float wy = mod(floor(v_imgPx.y * 0.25), 4.0);
+      float seed = fract(sin(dot(floor(v_imgPx * 0.25), vec2(12.9898, 78.233))) * 43758.5453);
+      if (wx < 1.5 && wy < 1.2 && seed > 0.42) {
+        vec3 warmGlow = surfaceKind == 5 ? vec3(1.0, 0.88, 0.62) : vec3(1.0, 0.82, 0.46);
+        colOut = mix(colOut, vec4(warmGlow, 0.55), 0.72);
+      }
+    }
   }
 
   if (u_showDepth > 0.5) {
@@ -185,6 +194,7 @@ uniform float u_nearM;
 uniform float u_farM;
 uniform float u_depthBiasM;
 uniform float u_xrayMode;
+uniform float u_isSelected;
 
 in vec2 v_imgPx;
 in float v_depthM;
@@ -217,6 +227,10 @@ void main() {
       float checker = mod(floor(gl_FragCoord.x * 0.25) + floor(gl_FragCoord.y * 0.25), 2.0);
       if (checker < 0.5) discard;
       outColor = vec4(0.28, 0.85, 1.0, 0.48);
+      return;
+    }
+    if (u_isSelected > 0.5) {
+      outColor = vec4(v_color, 0.28);
       return;
     }
     discard;

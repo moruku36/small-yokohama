@@ -1,0 +1,21 @@
+{
+  "tile": { "col": 1, "row": 0, "originPx": [1920, 0], "sizePx": 2048 },
+  "heroNameJa": "横浜ワールドポーターズ・ナビオス横浜・汽車道・万国橋・北仲ブリック＆ホワイト（馬車道・桜木町方面）",
+  "heroNameEn": "Yokohama World Porters, Navios Yokohama, Kishamichi Promenade, Bankoku Bridge & Kitanaka Brick & White (Bashamichi / Sakuragicho)",
+  "baseRenderPath": "data/tile-renders/tile_1_0_base.png",
+  "aerialMosaic": "data/gsi-aerial/shinko-z18.png (4608x4608, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_1_0.png",
+  "sourceModel": "image-generator (Small Yokohama Ligne-Claire gouache style anchored to Tile #1)",
+  "styleReference": "data/drawn-tiles/tile_1_1.png",
+  "sourceArtifact": "tile_1_0_drawn_v2_1795488879469.jpg",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.786
+  },
+  "waterMask": "3D SURFACE_KIND.WATER exact pixel composite with 2px seawall feathering",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T11:55:44+09:00"
+}

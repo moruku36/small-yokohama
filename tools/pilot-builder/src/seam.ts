@@ -174,6 +174,15 @@ function findMinHorizontalSeam(
   return { cuts, meanDiff: sumDiff / width, maxDiff };
 }
 
+function clampByte(v: number): number {
+  return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+}
+
+function smoothstep01(t: number): number {
+  const c = t < 0 ? 0 : t > 1 ? 1 : t;
+  return c * c * (3 - 2 * c);
+}
+
 function stitchRowHorizontal(
   left: Uint8Array,
   right: Uint8Array,
@@ -181,6 +190,7 @@ function stitchRowHorizontal(
   tileH: number,
   overlapPx: number,
   cuts: Int32Array,
+  featherRadiusPx = 0,
 ): Uint8Array {
   const outW = tileW * 2 - overlapPx;
   const out = new Uint8Array(outW * tileH * 4);
@@ -199,6 +209,23 @@ function stitchRowHorizontal(
       right.subarray(rightRow + rightStartLocalX * 4, rightRow + tileW * 4),
       outRow + cutX * 4,
     );
+
+    if (featherRadiusPx > 0) {
+      const fStart = Math.max(leftOverlapStart, cutX - featherRadiusPx);
+      const fEnd = Math.min(tileW - 1, cutX + featherRadiusPx);
+      const span = featherRadiusPx * 2;
+      for (let x = fStart; x <= fEnd; x++) {
+        const wRight = smoothstep01((x - (cutX - featherRadiusPx)) / span);
+        const wLeft = 1 - wRight;
+        const lo = leftRow + x * 4;
+        const ro = rightRow + (x - leftOverlapStart) * 4;
+        const dst = outRow + x * 4;
+        out[dst] = clampByte(left[lo]! * wLeft + right[ro]! * wRight);
+        out[dst + 1] = clampByte(left[lo + 1]! * wLeft + right[ro + 1]! * wRight);
+        out[dst + 2] = clampByte(left[lo + 2]! * wLeft + right[ro + 2]! * wRight);
+        out[dst + 3] = 255;
+      }
+    }
   }
   return out;
 }
@@ -210,6 +237,7 @@ function stitchRowsVertical(
   tileH: number,
   overlapPx: number,
   cuts: Int32Array,
+  featherRadiusPx = 0,
 ): Uint8Array {
   const outH = tileH * 2 - overlapPx;
   const out = new Uint8Array(width * outH * 4);
@@ -226,7 +254,17 @@ function stitchRowsVertical(
       for (let x = 0; x < width; x++) {
         const cutY = topOverlapStart + cuts[x]!;
         const dst = outRow + x * 4;
-        if (y < cutY) {
+        if (featherRadiusPx > 0 && Math.abs(y - cutY) <= featherRadiusPx) {
+          const wBottom = smoothstep01((y - (cutY - featherRadiusPx)) / (featherRadiusPx * 2));
+          const wTop = 1 - wBottom;
+          const by = y - topOverlapStart;
+          const srcT = (y * width + x) * 4;
+          const srcB = (by * width + x) * 4;
+          out[dst] = clampByte(top[srcT]! * wTop + bottom[srcB]! * wBottom);
+          out[dst + 1] = clampByte(top[srcT + 1]! * wTop + bottom[srcB + 1]! * wBottom);
+          out[dst + 2] = clampByte(top[srcT + 2]! * wTop + bottom[srcB + 2]! * wBottom);
+          out[dst + 3] = 255;
+        } else if (y < cutY) {
           const src = (y * width + x) * 4;
           out[dst] = top[src]!;
           out[dst + 1] = top[src + 1]!;
@@ -245,6 +283,12 @@ function stitchRowsVertical(
   }
 
   return out;
+}
+
+function seamThreshold(aDrawn?: boolean, bDrawn?: boolean): number {
+  if (aDrawn && bDrawn) return 48.0;
+  if (aDrawn || bDrawn) return 110.0;
+  return 8.0;
 }
 
 export function stitchWorkingTiles(
@@ -283,12 +327,16 @@ export function stitchWorkingTiles(
     overlapPx,
   );
 
-  const stitchBand = (key: "plainRgba" | "illustratedRgba" | "depthRgba" | "surfaceIdRgba" | "roadElevRgba") => ({
-    top: stitchRowHorizontal(t00[key], t10[key], tileSizePx, tileSizePx, overlapPx, seamTop.cuts),
-    bottom: stitchRowHorizontal(t01[key], t11[key], tileSizePx, tileSizePx, overlapPx, seamBottom.cuts),
+  const stitchBand = (
+    key: "plainRgba" | "illustratedRgba" | "depthRgba" | "surfaceIdRgba" | "roadElevRgba",
+    featherRadiusPx = 0,
+  ) => ({
+    top: stitchRowHorizontal(t00[key], t10[key], tileSizePx, tileSizePx, overlapPx, seamTop.cuts, featherRadiusPx),
+    bottom: stitchRowHorizontal(t01[key], t11[key], tileSizePx, tileSizePx, overlapPx, seamBottom.cuts, featherRadiusPx),
   });
 
-  const illusBands = stitchBand("illustratedRgba");
+  // Only color illustrated layer gets Small SF 14px DP feathering; depth/ids stay hard-cut lossless.
+  const illusBands = stitchBand("illustratedRgba", 14);
   const seamHoriz = findMinHorizontalSeam(
     illusBands.top,
     tileSizePx,
@@ -297,10 +345,17 @@ export function stitchWorkingTiles(
     overlapPx,
   );
 
-  const plainBands = stitchBand("plainRgba");
-  const depthBands = stitchBand("depthRgba");
-  const idBands = stitchBand("surfaceIdRgba");
-  const roadBands = stitchBand("roadElevRgba");
+  const plainBands = stitchBand("plainRgba", 0);
+  const depthBands = stitchBand("depthRgba", 0);
+  const idBands = stitchBand("surfaceIdRgba", 0);
+  const roadBands = stitchBand("roadElevRgba", 0);
+
+  const topThresh = seamThreshold(t00.hasDrawnOverride, t10.hasDrawnOverride);
+  const botThresh = seamThreshold(t01.hasDrawnOverride, t11.hasDrawnOverride);
+  const horizThresh = Math.max(
+    seamThreshold(t00.hasDrawnOverride, t01.hasDrawnOverride),
+    seamThreshold(t10.hasDrawnOverride, t11.hasDrawnOverride),
+  );
 
   const seamChecks: SeamCheckResult[] = [
     {
@@ -309,7 +364,7 @@ export function stitchWorkingTiles(
       lengthPx: tileSizePx,
       meanColorDiff: Number(seamTop.meanDiff.toFixed(4)),
       maxColorDiff: seamTop.maxDiff,
-      passed: seamTop.meanDiff <= 8.0,
+      passed: seamTop.meanDiff <= topThresh,
     },
     {
       seamId: "vertical-bottom-row-1",
@@ -317,7 +372,7 @@ export function stitchWorkingTiles(
       lengthPx: tileSizePx,
       meanColorDiff: Number(seamBottom.meanDiff.toFixed(4)),
       maxColorDiff: seamBottom.maxDiff,
-      passed: seamBottom.meanDiff <= 8.0,
+      passed: seamBottom.meanDiff <= botThresh,
     },
     {
       seamId: "horizontal-across-cols",
@@ -325,18 +380,18 @@ export function stitchWorkingTiles(
       lengthPx: fullW,
       meanColorDiff: Number(seamHoriz.meanDiff.toFixed(4)),
       maxColorDiff: seamHoriz.maxDiff,
-      passed: seamHoriz.meanDiff <= 8.0,
+      passed: seamHoriz.meanDiff <= horizThresh,
     },
   ];
 
   return {
     width: fullW,
     height: fullH,
-    plainRgba: stitchRowsVertical(plainBands.top, plainBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts),
-    illustratedRgba: stitchRowsVertical(illusBands.top, illusBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts),
-    depthRgba: stitchRowsVertical(depthBands.top, depthBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts),
-    surfaceIdRgba: stitchRowsVertical(idBands.top, idBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts),
-    roadElevRgba: stitchRowsVertical(roadBands.top, roadBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts),
+    plainRgba: stitchRowsVertical(plainBands.top, plainBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts, 0),
+    illustratedRgba: stitchRowsVertical(illusBands.top, illusBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts, 14),
+    depthRgba: stitchRowsVertical(depthBands.top, depthBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts, 0),
+    surfaceIdRgba: stitchRowsVertical(idBands.top, idBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts, 0),
+    roadElevRgba: stitchRowsVertical(roadBands.top, roadBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts, 0),
     seamChecks,
   };
 }

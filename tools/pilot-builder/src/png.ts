@@ -110,7 +110,7 @@ export function decodePngRgba(buffer: Uint8Array): {
       height = buf.readUInt32BE(dataStart + 4);
       bitDepth = buf[dataStart + 8]!;
       colorType = buf[dataStart + 9]!;
-      if (bitDepth !== 8 || colorType !== 6) {
+      if (bitDepth !== 8 || (colorType !== 6 && colorType !== 2)) {
         throw new Error(`Unsupported PNG format (bitDepth=${bitDepth}, colorType=${colorType})`);
       }
     } else if (type === "IDAT") {
@@ -122,20 +122,23 @@ export function decodePngRgba(buffer: Uint8Array): {
   }
 
   const raw = inflateSync(Buffer.concat(idatChunks));
-  const stride = width * 4;
-  const out = new Uint8Array(height * stride);
+  const bpp = colorType === 6 ? 4 : 3;
+  const srcStride = width * bpp;
+  const dstStride = width * 4;
+  const reconRow = new Uint8Array(srcStride);
+  const prevRow = new Uint8Array(srcStride);
+  const out = new Uint8Array(height * dstStride);
 
   for (let y = 0; y < height; y++) {
-    const rowStart = y * (1 + stride);
+    const rowStart = y * (1 + srcStride);
     const filter = raw[rowStart]!;
-    const outRow = y * stride;
-    const prevRow = (y - 1) * stride;
+    const outRow = y * dstStride;
 
-    for (let x = 0; x < stride; x++) {
+    for (let x = 0; x < srcStride; x++) {
       const rawByte = raw[rowStart + 1 + x]!;
-      const left = x >= 4 ? out[outRow + x - 4]! : 0;
-      const up = y > 0 ? out[prevRow + x]! : 0;
-      const upLeft = y > 0 && x >= 4 ? out[prevRow + x - 4]! : 0;
+      const left = x >= bpp ? reconRow[x - bpp]! : 0;
+      const up = y > 0 ? prevRow[x]! : 0;
+      const upLeft = y > 0 && x >= bpp ? prevRow[x - bpp]! : 0;
 
       let recon = rawByte;
       if (filter === 1) recon = (rawByte + left) & 0xff;
@@ -144,9 +147,76 @@ export function decodePngRgba(buffer: Uint8Array): {
       else if (filter === 4) recon = (rawByte + paeth(left, up, upLeft)) & 0xff;
       else if (filter !== 0) throw new Error(`Unsupported PNG filter ${filter}`);
 
-      out[outRow + x] = recon;
+      reconRow[x] = recon;
+    }
+
+    prevRow.set(reconRow);
+    if (bpp === 4) {
+      out.set(reconRow, outRow);
+    } else {
+      for (let px = 0; px < width; px++) {
+        const s = px * 3;
+        const d = outRow + px * 4;
+        out[d] = reconRow[s]!;
+        out[d + 1] = reconRow[s + 1]!;
+        out[d + 2] = reconRow[s + 2]!;
+        out[d + 3] = 255;
+      }
     }
   }
 
   return { width, height, data: out };
+}
+
+export function resizeRgbaBilinear(
+  src: Uint8Array,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): Uint8Array {
+  if (srcW === dstW && srcH === dstH) {
+    return new Uint8Array(src);
+  }
+  const out = new Uint8Array(dstW * dstH * 4);
+  const xRatio = srcW / dstW;
+  const yRatio = srcH / dstH;
+
+  for (let y = 0; y < dstH; y++) {
+    const sy = Math.min(srcH - 1, Math.max(0, (y + 0.5) * yRatio - 0.5));
+    const y0 = Math.floor(sy);
+    const y1 = Math.min(srcH - 1, y0 + 1);
+    const fy = sy - y0;
+    const invFy = 1 - fy;
+
+    for (let x = 0; x < dstW; x++) {
+      const sx = Math.min(srcW - 1, Math.max(0, (x + 0.5) * xRatio - 0.5));
+      const x0 = Math.floor(sx);
+      const x1 = Math.min(srcW - 1, x0 + 1);
+      const fx = sx - x0;
+      const invFx = 1 - fx;
+
+      const i00 = (y0 * srcW + x0) * 4;
+      const i10 = (y0 * srcW + x1) * 4;
+      const i01 = (y1 * srcW + x0) * 4;
+      const i11 = (y1 * srcW + x1) * 4;
+
+      const w00 = invFx * invFy;
+      const w10 = fx * invFy;
+      const w01 = invFx * fy;
+      const w11 = fx * fy;
+
+      const o = (y * dstW + x) * 4;
+      for (let c = 0; c < 4; c++) {
+        out[o + c] = Math.round(
+          src[i00 + c]! * w00 +
+            src[i10 + c]! * w10 +
+            src[i01 + c]! * w01 +
+            src[i11 + c]! * w11,
+        );
+      }
+    }
+  }
+
+  return out;
 }

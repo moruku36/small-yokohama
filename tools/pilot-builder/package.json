@@ -7,6 +7,9 @@
     "@small-yokohama/core": "0.1.0"
   },
   "scripts": {
+    "fetch:osm": "tsx src/fetchOsm.ts",
+    "fetch:aerial": "tsx src/fetchGsiAerial.ts",
+    "render:tile": "tsx src/renderTile.ts",
     "build:pilot": "tsx src/build.ts",
     "typecheck": "tsc --noEmit"
   }

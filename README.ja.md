@@ -1,23 +1,37 @@
 # スモール横浜 · Small Yokohama
 
-[English](README.md) · [開発技術とデータ](docs/technology.ja.md) · [地図で対象範囲を見る](scope/waterfront.geojson) · [全体設計](docs/design.ja.md) · [調査・出典](docs/research.ja.md)
+[README (メインページ / 日本語＆English概要)](README.md) · [全体タイル割当・座標表](docs/tile-grid-plan.md) · [地図で対象範囲を見る](scope/waterfront.geojson) · [全体設計](docs/design.ja.md) · [開発技術とデータ](docs/technology.ja.md) · [調査・出典](docs/research.ja.md)
 
-青い連節バスが倉庫の角を曲がって建物の陰に入り、地図を海沿いに動かすと山下公園が見えてくる。**スモール横浜**は、横浜駅からみなとみらいを経て元町・中華街までを、拡大して眺められる一枚の動くイラストにする計画です。このリポジトリには調査結果、全体設計、対象範囲の地図を収録しています。ビューアと実データ接続は次の実装段階です。
+青い連節バスが倉庫の角を曲がって建物の陰に入り、地図を海沿いに動かすと山下公園が見えてくる。**スモール横浜**は、横浜駅からみなとみらいを経て元町・中華街までを、拡大して眺められる一枚の動くミニチュア・イラスト地図にするプロジェクトです。
 
-## 地図の作り方
+現在、**新港パイロット 4 タイル（#1〜#4）が完成**し、チーム分担で残り **19 タイル（全体 23 タイル／3×8=24格子）** を進めるための汎用ベースレンダラー（`npm run render:tile`）および品質チェック環境まで実装済みです。
 
-画面はTypeScriptとOpenSeadragon、PLATEAUの前処理・Blenderの制御・市営バスの取得はPythonで実装する計画です。最初の4枚を作るための公式リポジトリと、選ぶ地図・交通データを開発ガイドにまとめました。[開発技術とデータ](docs/technology.ja.md)
+---
 
-横浜市の3D都市モデル「PLATEAU」を固定カメラで描画し、街をイラストにします。同じカメラで各地点までの奥行きも記録しておくと、バスが建物の裏を通る瞬間に車体の一部だけを隠せます。ブラウザは、今見えている範囲の画像だけを読み込みます。[全体設計](docs/design.ja.md)
+## 新港パイロット 4/4 完成プレビュー
 
-| 表現 | 最初に作るもの |
-| --- | --- |
-| 街路・建物・岸壁 | 2024年度の横浜市モデルから独自の絵を制作。先行街区は赤レンガ倉庫と新港サークルウォーク周辺。[対象範囲](scope/waterfront.geojson) |
-| バス | 最初の路線はベイサイドブルー。市営バスの時刻付き位置情報を当日のダイヤと照合し、観測時刻と時刻表推定を区別して表示。[交通データの出典](docs/research.ja.md) |
-| 海と空 | 海面を塗り分け、横浜の太陽の位置から昼夜を表現。客船はまず入港予定を表示し、実位置を動かす段階で船舶データを選定。[公開までの順序](docs/design.ja.md#実装順と合格条件) |
+![新港パイロット 4/4 結合プレビュー](docs/images/pilot-shinko-4tiles-preview.png)
 
-**原案から取り入れるもの。** Ari Dutilh氏のSmall SFは、Googleの立体都市データを先に描画し、街区ごとにイラスト化してつなぎ、拡大できる画像に乗り物を重ねています。作者は奥行きを使う仕組みまで公開しています。横浜版はこの制作工程を、横浜の地物・独自の絵・独自のコードで再現する設計です。[Small SF](https://smallsf.com/) · [作者の制作記](https://smallsf.com/about) · [横浜市の3Dデータ](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024)
+| マスター基準 (#1: `tile_1_1`) | サークルウォーク境界シーム (`10_7`) | 横浜スタジアム (`1_1`) | 汽車道・運河 (`12_5`) |
+| :---: | :---: | :---: | :---: |
+| ![マスター基準タイル #1](docs/images/tile_1_1_master.png) | ![サークルウォーク境界シーム](docs/images/zoom-circlewalk-seam.png) | ![横浜スタジアム拡大](docs/images/zoom-stadium.png) | ![汽車道・運河拡大](docs/images/zoom-kishamichi.png) |
 
-**最初の実験。** 隣り合う4枚の背景を作り、合成のバスでサークルウォークの下を通します。その後、営業中にベイサイドブルーの実測位置と経路が結び付くかを確認します。絵の継ぎ目、立体交差での隠れ方、データの鮮度を確かめた段階で描画範囲を広げます。[先行実験と合格条件](docs/design.ja.md#実装順と合格条件)
+---
 
-本リポジトリのオリジナル成果物には[MITライセンス](LICENSE)を適用します。外部データと今後使う第三者素材には各配布元の条件が適用されます。[出典と表示条件](docs/research.ja.md)
+## タイル構成・担当割り振り・作成ガイド
+
+全体 23 タイルの配置図・担当 1〜5 の分担表・コピペ用プロンプト・上位モデル（オーケストレーター）設定のポイント・セルフ検証手順は、[README.md](README.md) および [docs/tile-grid-plan.md](docs/tile-grid-plan.md) に詳しくまとめています。
+
+```powershell
+# 任意のタイルまたは担当ブロックの下絵（_base.png）を自動生成する
+npm.cmd run render:tile -- --tile 2,0
+npm.cmd run render:tile -- --block phase-a-2
+
+# パイロット全体ビルド・検証・ビューア起動
+npm.cmd run build:pilot
+npm.cmd run typecheck
+npm.cmd run test
+npm.cmd run dev
+```
+
+本リポジトリのオリジナル成果物には[MITライセンス](LICENSE)を適用します。外部データと第三者素材（OpenStreetMap ODbL、国土地理院タイル、PLATEAU 等）には各配布元の条件が適用されます。[出典と表示条件](docs/research.ja.md)

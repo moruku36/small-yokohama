@@ -243,7 +243,31 @@ export interface Landmark {
   elevationM: number;
   descriptionJa: string;
   descriptionEn: string;
-  sourceKind: "documented-proxy" | "plateau-fy2024" | "geojson-scope";
+  sourceKind: "documented-proxy" | "plateau-fy2024" | "geojson-scope" | "osm-odbl";
+  address?: string;
+  heightM?: number;
+  levels?: number;
+  googleMapsUrl?: string;
+  tier?: 1 | 2 | 3;
+}
+
+export interface PoiRecord {
+  id: string;
+  osmId?: number;
+  featureId?: number;
+  nameJa: string;
+  nameEn: string;
+  category: string;
+  lon: number;
+  lat: number;
+  elevationM: number;
+  heightM?: number;
+  levels?: number;
+  address?: string;
+  descriptionJa: string;
+  descriptionEn: string;
+  tier: 1 | 2 | 3;
+  googleMapsUrl: string;
 }
 
 export interface SceneFeatureRecord {
@@ -256,6 +280,12 @@ export interface SceneFeatureRecord {
   heightM: number;
   source: string;
   notes: string;
+  osmId?: number;
+  levels?: number;
+  address?: string;
+  googleMapsUrl?: string;
+  lon?: number;
+  lat?: number;
 }
 
 export interface SceneTriangle {
@@ -268,7 +298,21 @@ export interface SceneTriangle {
   plainRgb: Rgb;
   illustratedRgb: Rgb;
   deckId?: string;
-  materialTag?: "water" | "brick" | "asphalt" | "deck" | "roof" | "park" | "concrete" | "quay";
+  materialTag?:
+    | "water"
+    | "brick"
+    | "asphalt"
+    | "sidewalk"
+    | "deck"
+    | "roof"
+    | "park"
+    | "concrete"
+    | "quay"
+    | "glass"
+    | "marking"
+    | "wood"
+    | "ship"
+    | "crane";
 }
 
 export interface GcpCheckResult {
@@ -305,6 +349,7 @@ export interface QaReport {
   waterIntegrity: {
     waterSamplePixels: number;
     inventedBuildingPixels: number;
+    voidPixels: number;
     passed: boolean;
   };
   metrics: {

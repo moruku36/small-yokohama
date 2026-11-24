@@ -120,6 +120,27 @@ export function writeDziPyramid(
   return totalBytes;
 }
 
+export function writeDownsampledPreviewPng(
+  outPath: string,
+  fullWidth: number,
+  fullHeight: number,
+  fullRgba: Uint8Array,
+  targetSize = 1024,
+): number {
+  let w = fullWidth;
+  let h = fullHeight;
+  let data = fullRgba;
+  while (w > targetSize || h > targetSize) {
+    const next = downsample2xRgba(data, w, h);
+    w = next.width;
+    h = next.height;
+    data = next.data;
+  }
+  const png = encodePngRgba(w, h, data);
+  writeFileSync(outPath, png);
+  return png.byteLength;
+}
+
 /**
  * Write lossless non-interpolated 2x2 data tiles (depth, featureId, roadElevation).
  */

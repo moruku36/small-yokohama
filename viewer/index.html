@@ -1,26 +1,25 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Small Yokohama · スモール横浜</title>
   </head>
   <body>
-    <div id="app">
-      <header id="top-bar" class="top-bar"></header>
-      <div id="feed-banner" class="feed-banner" hidden></div>
-      <main id="workspace" class="workspace">
-        <aside id="landmark-drawer" class="landmark-drawer" aria-label="Landmarks and scheduled calls"></aside>
-        <section id="map-stage" class="map-stage" aria-label="Interactive illustrated map of Shinko Yokohama">
-          <div id="osd-container" class="osd-container"></div>
-          <canvas id="webgl-overlay" class="webgl-overlay" aria-hidden="true"></canvas>
-          <div id="detail-card" class="detail-card" hidden></div>
-          <div id="map-controls-hint" class="map-controls-hint"></div>
-        </section>
-      </main>
-      <footer id="credits-bar" class="credits-bar"></footer>
-      <div id="credits-modal" class="modal-backdrop" hidden></div>
-    </div>
+    <main id="map-stage" class="map-stage" aria-label="Interactive illustrated map of Yokohama waterfront">
+      <div id="osd-container" class="osd-container"></div>
+      <canvas id="webgl-overlay" class="webgl-overlay" aria-hidden="true"></canvas>
+      <div id="label-layer" class="label-layer" aria-hidden="true"></div>
+    </main>
+
+    <header id="bar" class="bar"></header>
+    <div id="drop" class="drop" hidden></div>
+    <div id="card" class="card" hidden></div>
+    <div id="status" class="status" aria-live="polite"></div>
+    <div id="sq" class="sq"></div>
+    <div id="credit" class="credit"></div>
+    <div id="about-modal" class="modal-backdrop" hidden></div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

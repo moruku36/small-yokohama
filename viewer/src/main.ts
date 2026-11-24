@@ -1,5 +1,5 @@
 import "./style.css";
-import type { PortCallRecord } from "@small-yokohama/core";
+import type { PoiRecord, PortCallRecord, SceneFeatureRecord } from "@small-yokohama/core";
 import { loadCurrentRelease, type LoadedReleaseBundle } from "./data/releaseLoader.js";
 import {
   fetchSnapshotForPreset,
@@ -7,47 +7,62 @@ import {
   type ResolvedFeedState,
   type ResolvedVehicle,
 } from "./data/vehicleFeed.js";
-import { getDict } from "./i18n.js";
 import {
   createInitialViewerState,
   serializeShareUrl,
+  type DropTab,
   type FeedPreset,
   type MapVariant,
   type ViewerState,
 } from "./state.js";
+import { LabelLayer } from "./ui/LabelLayer.js";
 import {
-  renderCreditsBarAndModal,
-  renderDetailCard,
-  renderDrawer,
-  renderFeedBanner,
-  renderTopBar,
+  renderBar,
+  renderCard,
+  renderCreditAndAboutModal,
+  renderDrop,
+  renderSq,
+  renderStatus,
+  type BooleanOptionKey,
   type UiHandlers,
 } from "./ui/renderUi.js";
 import { MapViewer } from "./viewer/MapViewer.js";
 
+const TV_STOP_IDS = [
+  "lm-redbrick-2",
+  "lm-circle-walk",
+  "lm-world-porters",
+  "lm-hammerhead",
+  "lm-cup-noodles",
+  "lm-intercontinental",
+  "lm-pacifico",
+  "lm-osanbashi",
+];
+
 async function bootstrap(): Promise<void> {
-  const topBarEl = document.getElementById("top-bar")!;
-  const feedBannerEl = document.getElementById("feed-banner")!;
-  const drawerEl = document.getElementById("landmark-drawer")!;
+  const barEl = document.getElementById("bar")!;
+  const dropEl = document.getElementById("drop")!;
+  const cardEl = document.getElementById("card")!;
+  const statusEl = document.getElementById("status")!;
+  const sqEl = document.getElementById("sq")!;
+  const creditEl = document.getElementById("credit")!;
+  const aboutModalEl = document.getElementById("about-modal")!;
+  const labelLayerEl = document.getElementById("label-layer")!;
   const osdEl = document.getElementById("osd-container")!;
   const glCanvas = document.getElementById("webgl-overlay") as HTMLCanvasElement;
-  const detailEl = document.getElementById("detail-card")!;
-  const hintEl = document.getElementById("map-controls-hint")!;
-  const creditsBarEl = document.getElementById("credits-bar")!;
-  const creditsModalEl = document.getElementById("credits-modal")!;
 
   let bundle: LoadedReleaseBundle;
   try {
     bundle = await loadCurrentRelease();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    topBarEl.innerHTML = `<span class="brand-title">Small Yokohama — Failed to load release: ${msg}</span>`;
+    barEl.innerHTML = `<span class="title">Small Yokohama — Failed to load release: ${msg}</span>`;
     return;
   }
 
   const prefersReducedMotion =
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-  let state: ViewerState = createInitialViewerState(
+  const state: ViewerState = createInitialViewerState(
     bundle.camera,
     window.location.search,
     prefersReducedMotion,
@@ -64,28 +79,55 @@ async function bootstrap(): Promise<void> {
     state.simTimeSec,
   );
 
-  if (resolvedFeed.vehicles[0]) {
-    const first = resolvedFeed.vehicles[0];
-    state.selected = {
-      kind: "vehicle",
-      vehicle: first.record,
-      ageSec: first.freshness.ageSec,
-      status: first.freshness.status,
-    };
-  }
-
-  let creditsModalOpen = false;
+  const labelLayer = new LabelLayer();
   let mapViewer: MapViewer;
+  let tvIndex = 0;
+  let tvTimerId = 0;
+
+  const stopTv = (reRender = true) => {
+    if (!state.tvMode) return;
+    state.tvMode = false;
+    if (tvTimerId) {
+      window.clearInterval(tvTimerId);
+      tvTimerId = 0;
+    }
+    if (reRender) refreshUi();
+  };
+
+  const syncLabels = () => {
+    if (!mapViewer) return;
+    const bounds = mapViewer.getViewportInfo();
+    labelLayer.render(labelLayerEl, bundle, state, bounds, handlers.onSelectPoi);
+  };
+
+  const syncDocumentPrefs = () => {
+    document.documentElement.dataset.theme = state.theme;
+    document.documentElement.lang = state.lang;
+  };
 
   const refreshUi = () => {
-    const d = getDict(state.lang);
-    hintEl.textContent = d.keyboardHint;
-    renderTopBar(topBarEl, state, handlers);
-    renderFeedBanner(feedBannerEl, state, resolvedFeed);
-    renderDrawer(drawerEl, state, bundle, resolvedFeed, handlers);
+    syncDocumentPrefs();
+    renderBar(barEl, state, handlers);
+    renderDrop(dropEl, state, bundle, resolvedFeed, handlers);
     const drift = mapViewer ? mapViewer.measureMaxMarkerDriftCssPx() : 0;
-    renderDetailCard(detailEl, state, resolvedFeed, drift, handlers);
-    renderCreditsBarAndModal(creditsBarEl, creditsModalEl, state, bundle, creditsModalOpen, handlers);
+    renderCard(cardEl, state, resolvedFeed, drift, handlers);
+    renderStatus(statusEl, state, resolvedFeed);
+    renderSq(sqEl, state, handlers);
+    renderCreditAndAboutModal(creditEl, aboutModalEl, state, bundle, handlers);
+    syncLabels();
+  };
+
+  const advanceTvStop = () => {
+    const tvLandmarks = TV_STOP_IDS
+      .map((id) => bundle.landmarks.find((l) => l.id === id))
+      .filter((l): l is NonNullable<typeof l> => Boolean(l));
+
+    if (tvLandmarks.length === 0) return;
+    const lm = tvLandmarks[tvIndex % tvLandmarks.length]!;
+    tvIndex++;
+    state.selected = { kind: "landmark", landmark: lm };
+    mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM, 2.75);
+    refreshUi();
   };
 
   const loadFeed = async (preset: FeedPreset) => {
@@ -96,25 +138,78 @@ async function bootstrap(): Promise<void> {
       state.liveEndpoint,
     );
     resolvedFeed = resolveVehiclesForFrame(currentSnapshot, preset, state.simTimeSec);
-    if (resolvedFeed.vehicles[0]) {
-      const rv = resolvedFeed.vehicles[0];
-      state.selected = {
-        kind: "vehicle",
-        vehicle: rv.record,
-        ageSec: rv.freshness.ageSec,
-        status: rv.freshness.status,
-      };
-    } else {
-      state.selected = null;
-    }
     mapViewer.updateState(state, resolvedFeed);
     refreshUi();
   };
 
   const handlers: UiHandlers = {
-    onToggleDrawer: () => {
-      state.drawerOpen = !state.drawerOpen;
+    onSetTab: (tab: DropTab) => {
+      stopTv(false);
+      state.activeTab = tab;
       refreshUi();
+    },
+    onSearchQuery: (q: string) => {
+      state.searchQuery = q;
+      renderDrop(dropEl, state, bundle, resolvedFeed, handlers);
+    },
+    onToggleTv: () => {
+      if (state.tvMode) {
+        stopTv(true);
+        return;
+      }
+      state.tvMode = true;
+      state.activeTab = null;
+      state.aboutOpen = false;
+      advanceTvStop();
+      tvTimerId = window.setInterval(advanceTvStop, 7500);
+    },
+    onShare: async () => {
+      const url = serializeShareUrl(state, window.location.href);
+      window.history.replaceState(null, "", url);
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(url);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    },
+    onToggleAbout: (open: boolean) => {
+      state.aboutOpen = open;
+      if (open) {
+        stopTv(false);
+        state.activeTab = null;
+      }
+      refreshUi();
+    },
+    onToggleLang: () => {
+      state.lang = state.lang === "ja" ? "en" : "ja";
+      refreshUi();
+    },
+    onToggleTheme: () => {
+      state.theme = state.theme === "light" ? "dark" : "light";
+      refreshUi();
+    },
+    onZoomIn: () => {
+      stopTv(true);
+      mapViewer.zoomBy(1.3);
+    },
+    onZoomOut: () => {
+      stopTv(true);
+      mapViewer.zoomBy(1 / 1.3);
+    },
+    onToggleFullscreen: () => {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.();
+      } else {
+        void document.documentElement.requestFullscreen?.();
+      }
+    },
+    onResetView: () => {
+      stopTv(true);
+      mapViewer.resetView();
     },
     onChangeVariant: (v: MapVariant) => {
       state.variant = v;
@@ -133,35 +228,7 @@ async function bootstrap(): Promise<void> {
       state.playing = !state.playing;
       refreshUi();
     },
-    onResetView: () => {
-      mapViewer.resetView();
-    },
-    onShare: async () => {
-      const url = serializeShareUrl(state, window.location.href);
-      window.history.replaceState(null, "", url);
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(url);
-          return true;
-        } catch {
-          return false;
-        }
-      }
-      return true;
-    },
-    onToggleLang: () => {
-      state.lang = state.lang === "ja" ? "en" : "ja";
-      refreshUi();
-    },
-    onOpenCredits: () => {
-      creditsModalOpen = true;
-      refreshUi();
-    },
-    onCloseCredits: () => {
-      creditsModalOpen = false;
-      refreshUi();
-    },
-    onToggleOption: (key) => {
+    onToggleOption: (key: BooleanOptionKey) => {
       state[key] = !state[key];
       if (key === "reducedMotion" && state.reducedMotion) {
         state.playing = false;
@@ -170,18 +237,30 @@ async function bootstrap(): Promise<void> {
       refreshUi();
     },
     onSelectLandmarkId: (id: string) => {
+      stopTv(false);
       const lm = bundle.landmarks.find((l) => l.id === id);
       if (!lm) return;
       state.selected = { kind: "landmark", landmark: lm };
-      mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM, 2.5);
+      state.activeTab = null;
+      mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM, 2.8);
+      refreshUi();
+    },
+    onSelectPoi: (poi: PoiRecord) => {
+      stopTv(false);
+      state.selected = { kind: "poi", poi };
+      state.activeTab = null;
+      mapViewer.panToLonLat(poi.lon, poi.lat, poi.elevationM, 3.0);
       refreshUi();
     },
     onSelectPortCall: (pc: PortCallRecord) => {
+      stopTv(false);
       state.selected = { kind: "portcall", portCall: pc };
-      mapViewer.panToLonLat(pc.lon, pc.lat, 3.5, 2.2);
+      state.activeTab = null;
+      mapViewer.panToLonLat(pc.lon, pc.lat, 3.5, 2.5);
       refreshUi();
     },
     onClearSelection: () => {
+      stopTv(false);
       state.selected = null;
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
@@ -190,6 +269,7 @@ async function bootstrap(): Promise<void> {
 
   mapViewer = new MapViewer(osdEl, glCanvas, bundle, state, {
     onSelectVehicle: (rv: ResolvedVehicle) => {
+      stopTv(false);
       state.selected = {
         kind: "vehicle",
         vehicle: rv.record,
@@ -200,38 +280,81 @@ async function bootstrap(): Promise<void> {
       refreshUi();
     },
     onSelectLandmark: (lm) => {
+      stopTv(false);
       state.selected = { kind: "landmark", landmark: lm };
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
+    onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => {
+      stopTv(false);
+      state.selected = { kind: "feature", feature: feat, lon, lat };
+      mapViewer.updateState(state, resolvedFeed);
+      refreshUi();
+    },
     onSelectPortCall: (pc) => {
+      stopTv(false);
       state.selected = { kind: "portcall", portCall: pc };
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
     onClearSelection: () => {
       state.selected = null;
+      if (state.activeTab) {
+        state.activeTab = null;
+      }
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
     onViewChanged: (centerImgX, centerImgY, zoom) => {
       state.cameraView = { centerImgX, centerImgY, zoom };
+      syncLabels();
     },
     onTogglePlay: handlers.onTogglePlay,
+    onUserInteract: () => {
+      stopTv(true);
+    },
   });
 
   mapViewer.updateState(state, resolvedFeed);
   refreshUi();
 
-  // Keyboard navigation & play/pause
+  // Keyboard shortcuts matching Small SF + map navigation
   window.addEventListener("keydown", (e) => {
     if (
       e.target instanceof HTMLInputElement ||
       e.target instanceof HTMLSelectElement ||
       e.target instanceof HTMLTextAreaElement
     ) {
+      if (e.key === "Escape") {
+        (e.target as HTMLElement).blur();
+        state.activeTab = null;
+        refreshUi();
+      }
       return;
     }
+
+    if (e.key === "/") {
+      e.preventDefault();
+      stopTv(false);
+      state.activeTab = "search";
+      refreshUi();
+      return;
+    }
+    if (e.key === "Escape") {
+      if (state.aboutOpen) {
+        state.aboutOpen = false;
+        refreshUi();
+      } else if (state.activeTab) {
+        state.activeTab = null;
+        refreshUi();
+      } else if (state.tvMode) {
+        stopTv(true);
+      } else if (state.selected) {
+        handlers.onClearSelection();
+      }
+      return;
+    }
+
     const stepPx = 72;
     if (e.key === "ArrowLeft") mapViewer.panByCssPx(-stepPx, 0);
     else if (e.key === "ArrowRight") mapViewer.panByCssPx(stepPx, 0);
@@ -239,7 +362,7 @@ async function bootstrap(): Promise<void> {
     else if (e.key === "ArrowDown") mapViewer.panByCssPx(0, stepPx);
     else if (e.key === "+" || e.key === "=") mapViewer.zoomBy(1.25);
     else if (e.key === "-") mapViewer.zoomBy(0.8);
-    else if (e.key === "0") mapViewer.resetView();
+    else if (e.key === "0") handlers.onResetView();
     else if (e.key === " ") {
       e.preventDefault();
       handlers.onTogglePlay();
@@ -260,7 +383,7 @@ async function bootstrap(): Promise<void> {
     }
   }, 30_000);
 
-  // Animation loop — strictly paused when tab is hidden (design.md requirement)
+  // Animation loop — strictly paused when tab is hidden
   let lastTs = performance.now();
   let lastUiRefreshTs = lastTs;
   let rafId = 0;
@@ -282,11 +405,14 @@ async function bootstrap(): Promise<void> {
       );
       mapViewer.updateState(state, resolvedFeed);
 
-      // Refresh selected vehicle card at ~4 Hz without thrashing DOM at 60 FPS
-      if (state.selected?.kind === "vehicle" && now - lastUiRefreshTs > 250) {
+      // Refresh selected card and status pill at ~4 Hz without DOM churn at 60 FPS
+      if (now - lastUiRefreshTs > 250) {
         lastUiRefreshTs = now;
-        const drift = mapViewer.measureMaxMarkerDriftCssPx();
-        renderDetailCard(detailEl, state, resolvedFeed, drift, handlers);
+        if (state.selected?.kind === "vehicle") {
+          const drift = mapViewer.measureMaxMarkerDriftCssPx();
+          renderCard(cardEl, state, resolvedFeed, drift, handlers);
+        }
+        renderStatus(statusEl, state, resolvedFeed);
       }
     }
 
@@ -300,9 +426,7 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  if (!document.hidden) {
-    rafId = window.requestAnimationFrame(tick);
-  }
+  rafId = window.requestAnimationFrame(tick);
 }
 
 void bootstrap();

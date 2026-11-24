@@ -1,0 +1,20 @@
+{
+  "tile": { "col": 1, "row": 1, "originPx": [1920, 1920], "sizePx": 2048 },
+  "heroNameJa": "新港ウォーターフロント（サークルウォーク・ハンマーヘッド・赤レンガ倉庫2号館・飛鳥Ⅱ・海保基地）",
+  "heroNameEn": "Shinko Waterfront (Circle Walk, Hammerhead, Red Brick #2 West, Asuka II, Coast Guard Base)",
+  "baseRenderPath": "data/tile-renders/tile_1_1_base.png",
+  "aerialMosaic": "data/gsi-aerial/shinko-z18.png (3584x3072, z=18 GSI Japan Seamless Photo)",
+  "drawnTilePath": "data/drawn-tiles/tile_1_1.png",
+  "sourceModel": "image-generator (Small SF Ligne-Claire gouache style transfer + GSI aerial base + OSM multipolygons)",
+  "styleReference": "https://smallsf.com/ (smallsf_drawn.webp style reference)",
+  "alignment": {
+    "srcWidth": 1024,
+    "srcHeight": 1024,
+    "shiftDxPx": 0,
+    "shiftDyPx": 0,
+    "sobelEdgeCorrelation": 0.838
+  },
+  "waterMask": "3D SURFACE_KIND.WATER exact pixel composite with 2px seawall feathering & 22px ship protection halo",
+  "seamFeatherPx": 14,
+  "updatedAt": "2026-11-24T11:09:00+09:00"
+}

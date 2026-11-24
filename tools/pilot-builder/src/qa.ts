@@ -96,29 +96,24 @@ export function runPilotQa(
     });
   }
 
-  // Open-water integrity scan: sample points across the offshore harbor basin
-  // strictly outside land polygons and Kishamichi bridge bounds.
+  // Open-water integrity scan across the offshore harbor basin
+  // strictly outside land polygons and piers (>= 32 m offshore).
   let waterSamplePixels = 0;
   let inventedBuildingPixels = 0;
 
-  for (let eastOffset = -350; eastOffset <= 450; eastOffset += 20) {
-    for (let northOffset = -350; northOffset <= 450; northOffset += 20) {
+  for (let eastOffset = -450; eastOffset <= 680; eastOffset += 25) {
+    for (let northOffset = -450; northOffset <= 680; northOffset += 25) {
       const inLand = scene.landPolygonsLocal.some((poly) =>
         pointInPolygon(eastOffset, northOffset, poly),
       );
       if (inLand) continue;
 
-      // Exclude a generous buffer around land & Kishamichi so 45-deg tall building overhangs near quay walls
-      // don't produce false positives; check genuine open harbor water (>= 35m offshore)
       const nearLand = scene.landPolygonsLocal.some((poly) =>
         poly.some(([vx, vy]) => Math.hypot(eastOffset - vx, northOffset - vy) < 35),
       );
       if (nearLand) continue;
 
-      // Also check that the point is strictly offshore NE of Shinko Island (where camera looks from)
       const localPt = [eastOffset, northOffset, 0] as const;
-      const wgs = wgs84ToLocal(camera, camera.originEpsg6677.easting, camera.originEpsg6677.northing, 0);
-      void wgs;
       const img = (() => {
         const d = [
           localPt[0] - camera.cameraOriginLocalM[0],
@@ -143,9 +138,6 @@ export function runPilotQa(
         continue;
       }
 
-      // Skip canal corridor where Kishamichi crosses
-      if (eastOffset < -210 && northOffset < 0 && northOffset > -230) continue;
-
       waterSamplePixels++;
       const o = (img.py * stitched.width + img.px) * 4;
       const sk = stitched.depthRgba[o + 2]!;
@@ -155,10 +147,20 @@ export function runPilotQa(
     }
   }
 
+  // Scan entire stitched depth buffer to verify zero unpainted VOID pixels
+  let voidPixels = 0;
+  const totalPixels = stitched.width * stitched.height;
+  for (let i = 0; i < totalPixels; i++) {
+    if (stitched.depthRgba[i * 4 + 2] === SURFACE_KIND.VOID) {
+      voidPixels++;
+    }
+  }
+
   const waterIntegrity = {
     waterSamplePixels,
     inventedBuildingPixels,
-    passed: waterSamplePixels > 20 && inventedBuildingPixels === 0,
+    voidPixels,
+    passed: waterSamplePixels > 20 && inventedBuildingPixels === 0 && voidPixels === 0,
   };
 
   const passed =

@@ -3,7 +3,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  buildShinkoPilotScene,
   decodeDepthFromRgba,
   decodeElevationFromRgba,
   interpolateTrackSample,
@@ -65,6 +64,7 @@ describe("Shinko pilot Step 1 & Step 2 acceptance against real generated PNG til
     expect(qa.gcpChecks.length).toBeGreaterThanOrEqual(6);
     expect(qa.maxGcpDisplacementPx).toBeLessThanOrEqual(8);
     expect(qa.waterIntegrity.inventedBuildingPixels).toBe(0);
+    expect(qa.waterIntegrity.voidPixels).toBe(0);
     expect(qa.seamChecks.every((s) => s.passed)).toBe(true);
 
     // Confirm Red Brick Warehouse No. 2 genuinely spans across the vertical working-tile boundary (1920..2048)
@@ -102,16 +102,19 @@ describe("Shinko pilot Step 1 & Step 2 acceptance against real generated PNG til
   });
 
   it("keeps ground-road elevation separated from overhead pedestrian bridge and preserves visibility for a point ON the deck", () => {
-    const scene = buildShinkoPilotScene();
-    const deckPt = scene.deckTestPoint;
+    const landmarksFile = JSON.parse(readFileSync(join(RELEASE_DIR, "landmarks.json"), "utf8")) as {
+      deckTestPoint: { lon: number; lat: number; elevationM: number; deckId: string };
+    };
+    const deckPt = landmarksFile.deckTestPoint;
     const deckImg = wgs84ToImage(camera, deckPt.lon, deckPt.lat, deckPt.elevationM + 0.15);
     const depthRgba = sampleTilePng(depthTiles, camera, deckImg.px, deckImg.py);
     const sceneDepthM = decodeDepthFromRgba(depthRgba[0], depthRgba[1], camera.nearM, camera.farM);
     // Point on top of Circle Walk (+6.9m) must NOT be occluded by the deck itself
     expect(deckImg.depthM <= sceneDepthM + 0.35).toBe(true);
 
-    // Meanwhile, ground-road elevation tile under Circle Walk reports ~2.0..2.2m, never 6.9m!
-    const roadImg = wgs84ToImage(camera, 139.6394, 35.4531, 2.2);
+    // Meanwhile, ground-road elevation tile under Circle Walk center (t=10s) reports ~2.0..2.2m, never 6.9m!
+    const cwRoadKf = synthetic.keyframes!["syn-bayside-blue-01"]![2]!;
+    const roadImg = wgs84ToImage(camera, cwRoadKf.lon, cwRoadKf.lat, cwRoadKf.roadElevationM);
     const roadRgba = sampleTilePng(roadElevTiles, camera, roadImg.px, roadImg.py);
     const groundElev = decodeElevationFromRgba(roadRgba[0], roadRgba[1], roadRgba[2], 0, 100);
     expect(groundElev).not.toBeNull();

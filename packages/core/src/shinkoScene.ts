@@ -14,6 +14,7 @@ import type {
   CameraManifest,
   GroundControlPoint,
   Landmark,
+  PoiRecord,
   PortCallRecord,
   Rgb,
   SceneFeatureRecord,
@@ -31,8 +32,8 @@ import type {
  */
 
 export const SHINKO_ORIGIN_WGS84 = {
-  lon: 139.6417,
-  lat: 35.4527,
+  lon: 139.6420,
+  lat: 35.4521,
 } as const;
 
 export function createShinkoPilotCamera(): CameraManifest {
@@ -46,7 +47,7 @@ export function createShinkoPilotCamera(): CameraManifest {
     azimuthDeg: 225,
     depressionDeg: 45,
     refDistanceM: 1000,
-    metersPerPixel: 0.28,
+    metersPerPixel: 0.34,
     nearM: 0,
     farM: 2500,
     workingGrid: {
@@ -81,6 +82,13 @@ export const FEATURE_IDS = {
   AKARENGA_PARK: 15,
   KISHAMICHI: 16,
   OSANBASHI_APPROACH: 17,
+  CUPNOODLES_MUSEUM: 18,
+  JICA_YOKOHAMA: 19,
+  SHINKO_CENTRAL_SQUARE: 20,
+  BANKOKU_BRIDGE: 21,
+  CRUISE_SHIP_ASUKA: 22,
+  COAST_GUARD_VESSEL: 23,
+  ZOU_NO_HANA_TERRACE: 24,
 } as const;
 
 export const SHINKO_FEATURES: SceneFeatureRecord[] = [
@@ -261,6 +269,77 @@ export const SHINKO_FEATURES: SceneFeatureRecord[] = [
     source: "documented-proxy",
     notes: "Curved harbor breakwater south-east of Red Brick Park.",
   },
+  {
+    featureId: FEATURE_IDS.CUPNOODLES_MUSEUM,
+    slug: "cupnoodles-museum-yokohama",
+    nameJa: "カップヌードルミュージアム 横浜",
+    nameEn: "Cup Noodles Museum Yokohama",
+    surfaceKind: SURFACE_KIND.BUILDING,
+    heightM: 24.0,
+    source: "documented-proxy",
+    notes: "Stepped waterfront museum northwest of World Porters.",
+  },
+  {
+    featureId: FEATURE_IDS.JICA_YOKOHAMA,
+    slug: "jica-yokohama",
+    nameJa: "JICA 横浜",
+    nameEn: "JICA Yokohama",
+    surfaceKind: SURFACE_KIND.BUILDING,
+    heightM: 22.0,
+    source: "documented-proxy",
+    notes: "International cooperation center southeast of Circle Walk.",
+  },
+  {
+    featureId: FEATURE_IDS.SHINKO_CENTRAL_SQUARE,
+    slug: "shinko-central-square",
+    nameJa: "新港中央広場",
+    nameEn: "Shinko Central Square",
+    surfaceKind: SURFACE_KIND.VEGETATION,
+    heightM: 2.3,
+    source: "documented-proxy",
+    notes: "Landscaped lawns, walkways and flowerbeds linking Circle Walk and Red Brick.",
+  },
+  {
+    featureId: FEATURE_IDS.BANKOKU_BRIDGE,
+    slug: "bankoku-bridge",
+    nameJa: "万国橋",
+    nameEn: "Bankoku Bridge",
+    surfaceKind: SURFACE_KIND.BRIDGE_DECK,
+    deckId: "ground-road",
+    heightM: 3.0,
+    source: "documented-proxy",
+    notes: "Concrete arch road bridge carrying Kokusai-Odori across the canal.",
+  },
+  {
+    featureId: FEATURE_IDS.CRUISE_SHIP_ASUKA,
+    slug: "cruise-ship-berth9",
+    nameJa: "新港ふ頭9号岸壁 着岸客船",
+    nameEn: "Docked Cruise Ship (Berth 9)",
+    surfaceKind: SURFACE_KIND.QUAY,
+    heightM: 24.0,
+    source: "documented-proxy",
+    notes: "Miniature passenger vessel docked at Hammerhead Berth 9.",
+  },
+  {
+    featureId: FEATURE_IDS.COAST_GUARD_VESSEL,
+    slug: "coast-guard-patrol-vessel",
+    nameJa: "海上保安庁 巡視船",
+    nameEn: "Japan Coast Guard Patrol Vessel",
+    surfaceKind: SURFACE_KIND.QUAY,
+    heightM: 12.0,
+    source: "documented-proxy",
+    notes: "Patrol ship moored beside the Coast Guard maritime base.",
+  },
+  {
+    featureId: FEATURE_IDS.ZOU_NO_HANA_TERRACE,
+    slug: "zou-no-hana-terrace",
+    nameJa: "象の鼻テラス・パーク",
+    nameEn: "Zou-no-hana Terrace & Park",
+    surfaceKind: SURFACE_KIND.QUAY,
+    heightM: 6.5,
+    source: "documented-proxy",
+    notes: "Waterfront glass pavilion and timber boardwalk at the southern pier.",
+  },
 ];
 
 // Shinko Island main polygon in WGS84 (closed counterclockwise, lon/lat)
@@ -297,7 +376,7 @@ function computeNormal(v0: Vec3, v1: Vec3, v2: Vec3): Vec3 {
   return [n[0] / len, n[1] / len, n[2] / len];
 }
 
-function pushTri(
+export function pushTri(
   out: SceneTriangle[],
   v0: Vec3,
   v1: Vec3,
@@ -323,7 +402,7 @@ function pushTri(
   });
 }
 
-function pushQuad(
+export function pushQuad(
   out: SceneTriangle[],
   a: Vec3,
   b: Vec3,
@@ -340,7 +419,7 @@ function pushQuad(
   pushTri(out, a, c, d, featureId, surfaceKind, plainRgb, illustratedRgb, deckId, materialTag);
 }
 
-function earClipOrFanPolygon(
+export function earClipOrFanPolygon(
   out: SceneTriangle[],
   ringXY: ReadonlyArray<readonly [number, number]>,
   z: number,
@@ -351,8 +430,17 @@ function earClipOrFanPolygon(
   deckId?: string,
   materialTag?: SceneTriangle["materialTag"],
 ): void {
-  // Ear-clipping triangulation for arbitrary simple concave/convex polygons
-  const pts = ringXY.map((p) => ({ x: p[0], y: p[1] }));
+  // Ear-clipping triangulation for arbitrary simple concave/convex polygons (dedupe consecutive pts first)
+  const pts: Array<{ x: number; y: number }> = [];
+  for (const p of ringXY) {
+    const prev = pts[pts.length - 1];
+    if (!prev || Math.hypot(p[0] - prev.x, p[1] - prev.y) > 1e-4) {
+      pts.push({ x: p[0], y: p[1] });
+    }
+  }
+  if (pts.length >= 2 && Math.hypot(pts[0]!.x - pts[pts.length - 1]!.x, pts[0]!.y - pts[pts.length - 1]!.y) <= 1e-4) {
+    pts.pop();
+  }
   if (pts.length < 3) return;
 
   // Ensure CCW winding
@@ -384,7 +472,7 @@ function earClipOrFanPolygon(
   };
 
   let guard = 0;
-  while (indices.length > 3 && guard < 2000) {
+  while (indices.length > 3 && guard < 10000) {
     guard++;
     let clipped = false;
     for (let i = 0; i < indices.length; i++) {
@@ -446,7 +534,7 @@ function earClipOrFanPolygon(
   }
 }
 
-function addExtrudedPrism(
+export function addExtrudedPrism(
   out: SceneTriangle[],
   ringXY: ReadonlyArray<readonly [number, number]>,
   zBottom: number,
@@ -482,7 +570,7 @@ function addExtrudedPrism(
   }
 }
 
-function orientedRectXY(
+export function orientedRectXY(
   cx: number,
   cy: number,
   lengthM: number,
@@ -502,7 +590,7 @@ function orientedRectXY(
   return local.map(([lx, ly]) => [cx + lx * cos - ly * sin, cy + lx * sin + ly * cos]);
 }
 
-function addGabledBuilding(
+export function addGabledBuilding(
   out: SceneTriangle[],
   cx: number,
   cy: number,
@@ -559,7 +647,7 @@ function addGabledBuilding(
   pushQuad(out, e3, r0, r1, e2, featureId, SURFACE_KIND.BUILDING, roofPlain, roofIllus, undefined, roofTag);
 }
 
-function addRoadStrip(
+export function addRoadStrip(
   out: SceneTriangle[],
   p0: readonly [number, number],
   p1: readonly [number, number],
@@ -690,6 +778,290 @@ function addAnnularBridge(
   }
 }
 
+export function addTree(
+  out: SceneTriangle[],
+  cx: number,
+  cy: number,
+  scale: number,
+  featureId: number,
+  toneShift = 0,
+): void {
+  const trunk = orientedRectXY(cx, cy, 0.9 * scale, 0.9 * scale, 0.4);
+  addExtrudedPrism(
+    out,
+    trunk,
+    2.0,
+    2.0 + 2.4 * scale,
+    featureId,
+    SURFACE_KIND.VEGETATION,
+    SURFACE_KIND.VEGETATION,
+    [104, 82, 62],
+    [114, 84, 58],
+    [94, 72, 54],
+    [104, 76, 52],
+    undefined,
+    "wood",
+    "wood",
+  );
+
+  const ring = (r: number, n: number, rot: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const a = rot + (i / n) * Math.PI * 2;
+      return [cx + r * Math.cos(a), cy + r * Math.sin(a)] as [number, number];
+    });
+
+  const c1Plain: Rgb = [86 + toneShift, 134 + toneShift, 82];
+  const c1Illus: Rgb = [78 + toneShift, 142 + toneShift, 86];
+  const c2Plain: Rgb = [104 + toneShift, 154 + toneShift, 94];
+  const c2Illus: Rgb = [102 + toneShift, 164 + toneShift, 96];
+
+  addExtrudedPrism(
+    out,
+    ring(3.6 * scale, 8, 0.2),
+    2.0 + 2.1 * scale,
+    2.0 + 4.8 * scale,
+    featureId,
+    SURFACE_KIND.VEGETATION,
+    SURFACE_KIND.VEGETATION,
+    c1Plain,
+    c1Illus,
+    [68 + toneShift, 114 + toneShift, 68],
+    [64 + toneShift, 122 + toneShift, 72],
+    undefined,
+    "park",
+    "park",
+  );
+  addExtrudedPrism(
+    out,
+    ring(2.3 * scale, 8, 0.6),
+    2.0 + 4.8 * scale,
+    2.0 + 6.4 * scale,
+    featureId,
+    SURFACE_KIND.VEGETATION,
+    SURFACE_KIND.VEGETATION,
+    c2Plain,
+    c2Illus,
+    c1Plain,
+    c1Illus,
+    undefined,
+    "park",
+    "park",
+  );
+}
+
+export function addRoadMarkings(
+  out: SceneTriangle[],
+  p0: readonly [number, number],
+  p1: readonly [number, number],
+  widthM: number,
+  z: number,
+  featureId: number,
+): void {
+  const dx = p1[0] - p0[0];
+  const dy = p1[1] - p0[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 12) return;
+  const angle = Math.atan2(dy, dx);
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Center dashed line
+  for (let s = 10; s < len - 10; s += 11) {
+    const dashLen = Math.min(4.5, len - 10 - s);
+    if (dashLen <= 1) break;
+    const mx = p0[0] + ux * (s + dashLen * 0.5);
+    const my = p0[1] + uy * (s + dashLen * 0.5);
+    earClipOrFanPolygon(
+      out,
+      orientedRectXY(mx, my, dashLen, 0.36, angle),
+      z,
+      featureId,
+      SURFACE_KIND.ROAD,
+      [226, 228, 232],
+      [242, 240, 232],
+      "ground-road",
+      "marking",
+    );
+  }
+
+  // Zebra crosswalks near both ends
+  for (const endS of [6, len - 6]) {
+    const cx = p0[0] + ux * endS;
+    const cy = p0[1] + uy * endS;
+    const nx = -uy;
+    const ny = ux;
+    const halfW = widthM * 0.42;
+    for (let t = -halfW; t <= halfW; t += 1.6) {
+      earClipOrFanPolygon(
+        out,
+        orientedRectXY(cx + nx * t, cy + ny * t, 3.2, 0.68, angle),
+        z,
+        featureId,
+        SURFACE_KIND.ROAD,
+        [232, 234, 238],
+        [244, 242, 236],
+        "ground-road",
+        "marking",
+      );
+    }
+  }
+}
+
+export function addShip(
+  out: SceneTriangle[],
+  cx: number,
+  cy: number,
+  lengthM: number,
+  widthM: number,
+  angleRad: number,
+  featureId: number,
+  isCruise: boolean,
+): void {
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const rotPt = (lx: number, ly: number): [number, number] => [
+    cx + lx * cos - ly * sin,
+    cy + lx * sin + ly * cos,
+  ];
+  const hl = lengthM * 0.5;
+  const hw = widthM * 0.5;
+
+  // Pointed bow + transom stern hull
+  const hullRing: Array<[number, number]> = [
+    rotPt(-hl * 0.92, -hw * 0.72),
+    rotPt(hl * 0.58, -hw),
+    rotPt(hl * 1.04, 0),
+    rotPt(hl * 0.58, hw),
+    rotPt(-hl * 0.92, hw * 0.72),
+  ];
+
+  const hullPlain: Rgb = isCruise ? [36, 56, 86] : [214, 222, 230];
+  const hullIllus: Rgb = isCruise ? [34, 58, 96] : [228, 234, 240];
+  addExtrudedPrism(
+    out,
+    hullRing,
+    0.0,
+    isCruise ? 6.2 : 3.4,
+    featureId,
+    SURFACE_KIND.QUAY,
+    SURFACE_KIND.QUAY,
+    [224, 212, 194],
+    [232, 218, 196],
+    hullPlain,
+    hullIllus,
+    undefined,
+    "ship",
+    "ship",
+  );
+
+  // White passenger superstructure tiers
+  const tiers = isCruise
+    ? [
+        { len: lengthM * 0.72, wid: widthM * 0.82, z0: 6.2, z1: 12.2, shiftX: -hl * 0.04 },
+        { len: lengthM * 0.56, wid: widthM * 0.68, z0: 12.2, z1: 17.6, shiftX: -hl * 0.02 },
+        { len: lengthM * 0.34, wid: widthM * 0.52, z0: 17.6, z1: 21.4, shiftX: hl * 0.06 },
+      ]
+    : [
+        { len: lengthM * 0.52, wid: widthM * 0.72, z0: 3.4, z1: 7.4, shiftX: hl * 0.05 },
+        { len: lengthM * 0.24, wid: widthM * 0.84, z0: 7.4, z1: 9.8, shiftX: hl * 0.14 },
+      ];
+
+  for (const t of tiers) {
+    const [tx, ty] = rotPt(t.shiftX, 0);
+    addExtrudedPrism(
+      out,
+      orientedRectXY(tx, ty, t.len, t.wid, angleRad),
+      t.z0,
+      t.z1,
+      featureId,
+      SURFACE_KIND.QUAY,
+      SURFACE_KIND.QUAY,
+      [238, 240, 244],
+      [248, 246, 240],
+      [212, 218, 226],
+      [226, 230, 236],
+      undefined,
+      "ship",
+      "ship",
+    );
+  }
+
+  // Funnel
+  const [fx, fy] = rotPt(-hl * 0.18, 0);
+  const fTopZ = isCruise ? 24.8 : 11.8;
+  const fBotZ = isCruise ? 21.0 : 9.0;
+  addExtrudedPrism(
+    out,
+    orientedRectXY(fx, fy, widthM * 0.34, widthM * 0.26, angleRad),
+    fBotZ,
+    fTopZ,
+    featureId,
+    SURFACE_KIND.QUAY,
+    SURFACE_KIND.QUAY,
+    [48, 52, 60],
+    [54, 56, 64],
+    isCruise ? [184, 54, 48] : [36, 98, 168],
+    isCruise ? [202, 58, 52] : [42, 114, 186],
+    undefined,
+    "ship",
+    "ship",
+  );
+}
+
+export function addSailboat(
+  out: SceneTriangle[],
+  cx: number,
+  cy: number,
+  angleRad: number,
+  featureId: number,
+): void {
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const rotPt = (lx: number, ly: number): [number, number] => [
+    cx + lx * cos - ly * sin,
+    cy + lx * sin + ly * cos,
+  ];
+  const hull: Array<[number, number]> = [
+    rotPt(-5.5, -1.6),
+    rotPt(2.5, -1.9),
+    rotPt(6.5, 0),
+    rotPt(2.5, 1.9),
+    rotPt(-5.5, 1.6),
+  ];
+  addExtrudedPrism(
+    out,
+    hull,
+    0.0,
+    1.5,
+    featureId,
+    SURFACE_KIND.QUAY,
+    SURFACE_KIND.QUAY,
+    [244, 244, 240],
+    [250, 248, 242],
+    [216, 222, 228],
+    [226, 230, 236],
+    undefined,
+    "ship",
+    "ship",
+  );
+  // White triangular sail
+  const sBase0 = rotPt(-1.5, 0);
+  const sBase1 = rotPt(3.8, 0);
+  const sPeak = rotPt(-0.8, 0.2);
+  pushTri(
+    out,
+    [sBase0[0], sBase0[1], 1.8],
+    [sBase1[0], sBase1[1], 1.8],
+    [sPeak[0], sPeak[1], 11.5],
+    featureId,
+    SURFACE_KIND.QUAY,
+    [248, 248, 250],
+    [252, 250, 246],
+    undefined,
+    "ship",
+  );
+}
+
 export interface ShinkoSceneBundle {
   camera: CameraManifest;
   triangles: SceneTriangle[];
@@ -705,6 +1077,9 @@ export interface ShinkoSceneBundle {
   };
   portCalls: PortCallRecord[];
   landPolygonsLocal: Array<Array<[number, number]>>;
+  features?: SceneFeatureRecord[];
+  pois?: PoiRecord[];
+  osmAttribution?: string;
 }
 
 export function buildShinkoPilotScene(): ShinkoSceneBundle {
@@ -715,8 +1090,8 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     return [v[0], v[1]];
   };
 
-  // 1. Harbor Water Plane spanning entire camera view (+/- 900m)
-  const wSize = 900;
+  // 1. Harbor Water Plane spanning entire 3968x3968 orthographic projection (+/- 1800m)
+  const wSize = 1800;
   pushQuad(
     triangles,
     [-wSize, -wSize, 0],
@@ -725,8 +1100,8 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     [-wSize, wSize, 0],
     FEATURE_IDS.HARBOR_WATER,
     SURFACE_KIND.WATER,
-    [76, 126, 162],
-    [68, 128, 168],
+    [68, 122, 160],
+    [54, 118, 164],
     undefined,
     "water",
   );
@@ -821,13 +1196,31 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     rbStreetMid[1] + d1Unit[1] * 168,
   ];
 
-  // 4. Road Network (+2.2m, deckId: "ground-road")
-  const roadPlain: Rgb = [96, 100, 108];
-  const roadIllus: Rgb = [92, 98, 108];
+  // 4. Sidewalks (+2.08m), Road Network (+2.15m), & Road Markings (+2.18m, deckId: "ground-road")
+  const sidePlain: Rgb = [194, 190, 182];
+  const sideIllus: Rgb = [214, 206, 192];
+  const roadPlain: Rgb = [88, 94, 102];
+  const roadIllus: Rgb = [84, 92, 104];
+
+  // Sidewalk curbstones underneath roads
+  addRoadStrip(triangles, kokusaiStart, kokusaiEnd, 20, 2.08, FEATURE_IDS.SHINKO_ISLAND, sidePlain, sideIllus);
+  addRoadStrip(triangles, kokusaiTurn, rbStreetNw, 18, 2.08, FEATURE_IDS.SHINKO_ISLAND, sidePlain, sideIllus);
+  addRoadStrip(triangles, rbStreetNw, rbStreetSe, 18, 2.08, FEATURE_IDS.SHINKO_ISLAND, sidePlain, sideIllus);
+  addRoadStrip(
+    triangles,
+    [cwCenter[0], cwCenter[1]],
+    [cwCenter[0] + d1Perp[0] * 210, cwCenter[1] + d1Perp[1] * 210],
+    17,
+    2.08,
+    FEATURE_IDS.SHINKO_ISLAND,
+    sidePlain,
+    sideIllus,
+  );
+
+  // Road carriageways
   addRoadStrip(triangles, kokusaiStart, kokusaiEnd, 14, 2.15, FEATURE_IDS.KOKUSAI_ODORI, roadPlain, roadIllus);
   addRoadStrip(triangles, kokusaiTurn, rbStreetNw, 12, 2.15, FEATURE_IDS.SHINKO_CHUO_DORI, roadPlain, roadIllus);
   addRoadStrip(triangles, rbStreetNw, rbStreetSe, 12, 2.15, FEATURE_IDS.AKARENGA_DORI, roadPlain, roadIllus);
-  // Shinko cross street connecting Circle Walk to Marine & Walk
   addRoadStrip(
     triangles,
     [cwCenter[0], cwCenter[1]],
@@ -839,7 +1232,61 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     roadIllus,
   );
 
-  // 5. Kishamichi Pedestrian Promenade across Unga Canal
+  // Lane markings & crosswalks
+  addRoadMarkings(triangles, kokusaiStart, kokusaiEnd, 14, 2.18, FEATURE_IDS.KOKUSAI_ODORI);
+  addRoadMarkings(triangles, kokusaiTurn, rbStreetNw, 12, 2.18, FEATURE_IDS.SHINKO_CHUO_DORI);
+  addRoadMarkings(triangles, rbStreetNw, rbStreetSe, 12, 2.18, FEATURE_IDS.AKARENGA_DORI);
+  addRoadMarkings(
+    triangles,
+    [cwCenter[0], cwCenter[1]],
+    [cwCenter[0] + d1Perp[0] * 210, cwCenter[1] + d1Perp[1] * 210],
+    11,
+    2.17,
+    FEATURE_IDS.SHINKO_CHUO_DORI,
+  );
+
+  // Red Brick bus stop shelter bay along inland side of Akarenga-dori (strictly clear of lane)
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(rb2Center[0] - d1Perp[0] * 25.5 + d1Unit[0] * 44, rb2Center[1] - d1Perp[1] * 25.5 + d1Unit[1] * 44, 11, 2.8, rb2Angle),
+    2.1,
+    4.6,
+    FEATURE_IDS.AKARENGA_DORI,
+    SURFACE_KIND.BRIDGE_DECK,
+    SURFACE_KIND.BRIDGE_SUPPORT,
+    [32, 112, 168],
+    [28, 122, 182],
+    [164, 178, 192],
+    [182, 196, 210],
+    undefined,
+    "glass",
+    "glass",
+  );
+
+  // 4b. Bankoku Bridge spanning Unga Canal at the SW end of Kokusai-Odori
+  const bankokuA = toXY(139.6377, 35.4508);
+  const bankokuB = toXY(139.6386, 35.4517);
+  const bankokuAngle = Math.atan2(bankokuB[1] - bankokuA[1], bankokuB[0] - bankokuA[0]);
+  const bankokuLen = Math.hypot(bankokuB[0] - bankokuA[0], bankokuB[1] - bankokuA[1]) + 10;
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY((bankokuA[0] + bankokuB[0]) * 0.5, (bankokuA[1] + bankokuB[1]) * 0.5, bankokuLen, 16, bankokuAngle),
+    0.8,
+    2.5,
+    FEATURE_IDS.BANKOKU_BRIDGE,
+    SURFACE_KIND.ROAD,
+    SURFACE_KIND.QUAY,
+    [136, 134, 132],
+    [152, 146, 138],
+    [164, 158, 148],
+    [176, 168, 154],
+    "ground-road",
+    "sidewalk",
+    "concrete",
+  );
+  addRoadStrip(triangles, bankokuA, bankokuB, 11, 2.6, FEATURE_IDS.BANKOKU_BRIDGE, roadPlain, roadIllus);
+
+  // 5. Kishamichi Pedestrian Promenade across Unga Canal + twin steel trusses
   const kishaA = toXY(139.6373, 35.4510);
   const kishaB = toXY(139.6386, 35.4525);
   const kishaDx = kishaB[0] - kishaA[0];
@@ -850,13 +1297,13 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     (kishaA[0] + kishaB[0]) * 0.5,
     (kishaA[1] + kishaB[1]) * 0.5,
     kishaLen,
-    8.5,
+    9.0,
     kishaAngle,
   );
   addExtrudedPrism(
     triangles,
     kishaPoly,
-    2.4,
+    2.2,
     3.4,
     FEATURE_IDS.KISHAMICHI,
     SURFACE_KIND.BRIDGE_DECK,
@@ -866,16 +1313,96 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     [122, 114, 104],
     [118, 108, 96],
     "pedestrian-promenade",
-    "deck",
+    "wood",
     "concrete",
   );
+  // Historic steel Warren truss bridge ribs along Kishamichi
+  for (const frac of [0.32, 0.68]) {
+    const bx = kishaA[0] + kishaDx * frac;
+    const by = kishaA[1] + kishaDy * frac;
+    const kPerpX = -Math.sin(kishaAngle);
+    const kPerpY = Math.cos(kishaAngle);
+    for (const side of [-4.2, 4.2]) {
+      addExtrudedPrism(
+        triangles,
+        orientedRectXY(bx + kPerpX * side, by + kPerpY * side, 28, 0.7, kishaAngle),
+        3.4,
+        7.8,
+        FEATURE_IDS.KISHAMICHI,
+        SURFACE_KIND.BRIDGE_DECK,
+        SURFACE_KIND.BRIDGE_DECK,
+        [114, 120, 128],
+        [98, 108, 118],
+        [96, 104, 112],
+        [86, 94, 106],
+        "pedestrian-promenade",
+        "concrete",
+        "concrete",
+      );
+    }
+    addExtrudedPrism(
+      triangles,
+      orientedRectXY(bx, by, 26, 9.0, kishaAngle),
+      7.4,
+      7.9,
+      FEATURE_IDS.KISHAMICHI,
+      SURFACE_KIND.BRIDGE_DECK,
+      SURFACE_KIND.BRIDGE_DECK,
+      [114, 120, 128],
+      [104, 114, 124],
+      [96, 104, 112],
+      [86, 94, 106],
+      "pedestrian-promenade",
+      "concrete",
+      "concrete",
+    );
+  }
 
-  // 6. Red Brick Park greenery & trees on the harbor side of Warehouses 1 & 2
+  // 6. Shinko Central Square & Red Brick Park landscaping + sculpted trees
+  const centralSqCenter: [number, number] = [
+    rb2Center[0] - d1Perp[0] * 62 - d1Unit[0] * 24,
+    rb2Center[1] - d1Perp[1] * 62 - d1Unit[1] * 24,
+  ];
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(centralSqCenter[0], centralSqCenter[1], 110, 44, rb2Angle),
+    2.0,
+    2.22,
+    FEATURE_IDS.SHINKO_CENTRAL_SQUARE,
+    SURFACE_KIND.VEGETATION,
+    SURFACE_KIND.VEGETATION,
+    [118, 160, 106],
+    [114, 168, 104],
+    [104, 142, 94],
+    [98, 148, 92],
+    undefined,
+    "park",
+    "park",
+  );
+  // Central promenade stone walkway & flowerbed strip
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(centralSqCenter[0], centralSqCenter[1], 106, 8, rb2Angle),
+    2.22,
+    2.30,
+    FEATURE_IDS.SHINKO_CENTRAL_SQUARE,
+    SURFACE_KIND.GROUND,
+    SURFACE_KIND.GROUND,
+    [214, 206, 194],
+    [228, 218, 202],
+    [194, 186, 174],
+    [206, 196, 182],
+    undefined,
+    "sidewalk",
+    "sidewalk",
+  );
+
+  // Red Brick Park greenery
   const parkPoly = orientedRectXY(
     rb2Center[0] + d1Perp[0] * 62 + d1Unit[0] * 40,
     rb2Center[1] + d1Perp[1] * 62 + d1Unit[1] * 40,
-    185,
-    46,
+    196,
+    50,
     rb2Angle,
   );
   addExtrudedPrism(
@@ -895,31 +1422,110 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     "park",
   );
 
-  // Park tree canopies
-  for (const sOffset of [-55, -15, 25, 70, 105]) {
-    const tx = rb2Center[0] + d1Perp[0] * 42 + d1Unit[0] * sOffset;
-    const ty = rb2Center[1] + d1Perp[1] * 42 + d1Unit[1] * sOffset;
-    const canopy = orientedRectXY(tx, ty, 8.5, 8.5, 0.3);
-    addExtrudedPrism(
+  // Event plaza paving & white market canopies between Red Brick #2 and #1
+  const eventPlazaCenter: [number, number] = [
+    rb2Center[0] + d1Unit[0] * 116 + d1Perp[0] * 4,
+    rb2Center[1] + d1Unit[1] * 116 + d1Perp[1] * 4,
+  ];
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(eventPlazaCenter[0], eventPlazaCenter[1], 46, 32, rb2Angle),
+    2.0,
+    2.18,
+    FEATURE_IDS.AKARENGA_PARK,
+    SURFACE_KIND.GROUND,
+    SURFACE_KIND.GROUND,
+    [204, 194, 182],
+    [220, 208, 192],
+    [186, 176, 166],
+    [198, 186, 174],
+    undefined,
+    "sidewalk",
+    "sidewalk",
+  );
+  for (const rowOff of [-8, 8]) {
+    for (const colOff of [-10, 0, 10]) {
+      const tx = eventPlazaCenter[0] + d1Unit[0] * colOff + d1Perp[0] * rowOff;
+      const ty = eventPlazaCenter[1] + d1Unit[1] * colOff + d1Perp[1] * rowOff;
+      addGabledBuilding(
+        triangles,
+        tx,
+        ty,
+        5.5,
+        5.5,
+        rb2Angle,
+        2.18,
+        4.4,
+        5.6,
+        FEATURE_IDS.AKARENGA_PARK,
+        [236, 236, 234],
+        [246, 244, 238],
+        [244, 244, 240],
+        [252, 248, 242],
+        "concrete",
+        "concrete",
+      );
+    }
+  }
+
+  // Sculpted trees across Red Brick Park, Shinko Central Square, Kokusai-Odori avenue & canal edge
+  for (const sOffset of [-75, -45, -15, 15, 45, 75, 105, 130]) {
+    addTree(
       triangles,
-      canopy,
-      3.5,
-      6.4,
+      rb2Center[0] + d1Perp[0] * 35 + d1Unit[0] * sOffset,
+      rb2Center[1] + d1Perp[1] * 35 + d1Unit[1] * sOffset,
+      1.05,
       FEATURE_IDS.AKARENGA_PARK,
-      SURFACE_KIND.VEGETATION,
-      SURFACE_KIND.VEGETATION,
-      [96, 144, 88],
-      [88, 148, 86],
-      [78, 122, 72],
-      [74, 128, 72],
-      undefined,
-      "park",
-      "park",
+      (Math.abs(sOffset) % 10) - 4,
+    );
+    addTree(
+      triangles,
+      rb2Center[0] + d1Perp[0] * 86 + d1Unit[0] * sOffset,
+      rb2Center[1] + d1Perp[1] * 86 + d1Unit[1] * sOffset,
+      0.95,
+      FEATURE_IDS.AKARENGA_PARK,
+      (Math.abs(sOffset) % 8) - 2,
+    );
+  }
+  for (const sOffset of [-42, -18, 6, 30]) {
+    addTree(
+      triangles,
+      centralSqCenter[0] + d1Unit[0] * sOffset + d1Perp[0] * 16,
+      centralSqCenter[1] + d1Unit[1] * sOffset + d1Perp[1] * 16,
+      1.0,
+      FEATURE_IDS.SHINKO_CENTRAL_SQUARE,
+      2,
+    );
+    addTree(
+      triangles,
+      centralSqCenter[0] + d1Unit[0] * sOffset - d1Perp[0] * 16,
+      centralSqCenter[1] + d1Unit[1] * sOffset - d1Perp[1] * 16,
+      0.95,
+      FEATURE_IDS.SHINKO_CENTRAL_SQUARE,
+      -4,
+    );
+  }
+  for (const sOffset of [-115, -75, -42, 42, 80, 145]) {
+    addTree(
+      triangles,
+      cwCenter[0] + d1Unit[0] * sOffset + d1Perp[0] * 13.5,
+      cwCenter[1] + d1Unit[1] * sOffset + d1Perp[1] * 13.5,
+      0.9,
+      FEATURE_IDS.SHINKO_ISLAND,
+      0,
+    );
+    addTree(
+      triangles,
+      cwCenter[0] + d1Unit[0] * sOffset - d1Perp[0] * 13.5,
+      cwCenter[1] + d1Unit[1] * sOffset - d1Perp[1] * 13.5,
+      0.9,
+      FEATURE_IDS.SHINKO_ISLAND,
+      3,
     );
   }
 
-  // 7. Landmark Buildings
-  // Red Brick Warehouse No. 2 (spanning the 2x2 vertical seam!)
+  // 7. Landmark Buildings with Architectural Detail
+  // Red Brick Warehouse No. 2 (spanning the 2x2 vertical seam!) + cornice + 1F canopies + roof dormers
   addGabledBuilding(
     triangles,
     rb2Center[0],
@@ -932,14 +1538,64 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     16.8,
     FEATURE_IDS.RED_BRICK_2,
     [164, 78, 58],
-    [184, 82, 56],
+    [186, 84, 58],
     [98, 92, 90],
-    [118, 94, 88],
+    [116, 92, 86],
     "brick",
     "roof",
   );
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(rb2Center[0], rb2Center[1], rb2Len + 0.8, 22.8, rb2Angle),
+    12.3,
+    13.1,
+    FEATURE_IDS.RED_BRICK_2,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [224, 218, 206],
+    [238, 232, 220],
+    [214, 208, 196],
+    [228, 222, 208],
+    undefined,
+    "concrete",
+    "concrete",
+  );
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(rb2Center[0], rb2Center[1], rb2Len - 4, 26.5, rb2Angle),
+    4.6,
+    5.1,
+    FEATURE_IDS.RED_BRICK_2,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [104, 108, 114],
+    [96, 104, 114],
+    [88, 92, 98],
+    [82, 88, 98],
+    undefined,
+    "roof",
+    "roof",
+  );
+  for (const dOff of [-42, -14, 14, 42]) {
+    addExtrudedPrism(
+      triangles,
+      orientedRectXY(rb2Center[0] + d1Unit[0] * dOff, rb2Center[1] + d1Unit[1] * dOff, 8, 12, rb2Angle),
+      13.1,
+      15.8,
+      FEATURE_IDS.RED_BRICK_2,
+      SURFACE_KIND.BUILDING,
+      SURFACE_KIND.BUILDING,
+      [112, 98, 94],
+      [130, 102, 94],
+      [164, 78, 58],
+      [186, 84, 58],
+      undefined,
+      "roof",
+      "brick",
+    );
+  }
 
-  // Red Brick Warehouse No. 1
+  // Red Brick Warehouse No. 1 + cornice + canopies + roof dormers
   addGabledBuilding(
     triangles,
     rb1Center[0],
@@ -952,14 +1608,46 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     16.8,
     FEATURE_IDS.RED_BRICK_1,
     [166, 80, 60],
-    [186, 84, 58],
+    [188, 86, 60],
     [100, 94, 92],
-    [120, 96, 90],
+    [118, 94, 88],
     "brick",
     "roof",
   );
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(rb1Center[0], rb1Center[1], 78.8, 22.8, rb2Angle),
+    12.3,
+    13.1,
+    FEATURE_IDS.RED_BRICK_1,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [224, 218, 206],
+    [238, 232, 220],
+    [214, 208, 196],
+    [228, 222, 208],
+    undefined,
+    "concrete",
+    "concrete",
+  );
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(rb1Center[0], rb1Center[1], 74, 26.5, rb2Angle),
+    4.6,
+    5.1,
+    FEATURE_IDS.RED_BRICK_1,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [104, 108, 114],
+    [96, 104, 114],
+    [88, 92, 98],
+    [82, 88, 98],
+    undefined,
+    "roof",
+    "roof",
+  );
 
-  // World Porters
+  // World Porters + glass curtain walls + roof penthouse & skylights
   addExtrudedPrism(
     triangles,
     orientedRectXY(wpCenter[0], wpCenter[1], 112, 58, rb2Angle),
@@ -969,37 +1657,123 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     SURFACE_KIND.BUILDING,
     SURFACE_KIND.BUILDING,
     [188, 192, 198],
-    [226, 218, 206],
+    [224, 218, 208],
     [168, 174, 184],
-    [196, 192, 184],
+    [194, 190, 184],
     undefined,
     "concrete",
-    "concrete",
+    "glass",
+  );
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(wpCenter[0] + d1Perp[0] * 12, wpCenter[1] + d1Perp[1] * 12, 52, 18, rb2Angle),
+    28.0,
+    31.5,
+    FEATURE_IDS.WORLD_PORTERS,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [146, 178, 204],
+    [136, 182, 214],
+    [162, 174, 188],
+    [176, 190, 206],
+    undefined,
+    "glass",
+    "glass",
   );
 
-  // Marine & Walk Yokohama (twin coastal pavilions)
+  // Cup Noodles Museum Yokohama (NW of World Porters)
+  const cnCenter = toXY(139.6387, 35.4550);
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(cnCenter[0], cnCenter[1], 68, 42, rb2Angle),
+    2.0,
+    22.0,
+    FEATURE_IDS.CUPNOODLES_MUSEUM,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [214, 208, 198],
+    [234, 224, 208],
+    [188, 178, 168],
+    [206, 188, 170],
+    undefined,
+    "concrete",
+    "brick",
+  );
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(cnCenter[0] + d1Perp[0] * 8, cnCenter[1] + d1Perp[1] * 8, 44, 16, rb2Angle),
+    22.0,
+    25.2,
+    FEATURE_IDS.CUPNOODLES_MUSEUM,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [146, 178, 204],
+    [142, 186, 216],
+    [138, 168, 196],
+    [136, 174, 204],
+    undefined,
+    "glass",
+    "glass",
+  );
+
+  // JICA Yokohama (SE of Circle Walk)
+  const jicaCenter = toXY(139.6406, 35.4517);
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(jicaCenter[0], jicaCenter[1], 46, 34, rb2Angle),
+    2.0,
+    20.0,
+    FEATURE_IDS.JICA_YOKOHAMA,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [194, 198, 202],
+    [218, 216, 208],
+    [164, 172, 182],
+    [182, 190, 200],
+    undefined,
+    "concrete",
+    "glass",
+  );
+
+  // Marine & Walk Yokohama (twin coastal pavilions + timber courtyard terrace)
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(mwCenter[0], mwCenter[1], 112, 32, rb2Angle),
+    2.0,
+    2.3,
+    FEATURE_IDS.MARINE_AND_WALK,
+    SURFACE_KIND.GROUND,
+    SURFACE_KIND.GROUND,
+    [176, 146, 114],
+    [194, 156, 118],
+    [152, 126, 98],
+    [168, 134, 102],
+    undefined,
+    "wood",
+    "wood",
+  );
   for (const offset of [-32, 32]) {
     const mx = mwCenter[0] + d1Unit[0] * offset;
     const my = mwCenter[1] + d1Unit[1] * offset;
     addExtrudedPrism(
       triangles,
-      orientedRectXY(mx, my, 48, 24, rb2Angle),
-      2.0,
+      orientedRectXY(mx, my, 48, 22, rb2Angle),
+      2.3,
       12.0,
       FEATURE_IDS.MARINE_AND_WALK,
       SURFACE_KIND.BUILDING,
       SURFACE_KIND.BUILDING,
       [176, 168, 158],
-      [210, 194, 174],
+      [212, 196, 176],
       [148, 134, 122],
-      [168, 146, 128],
+      [172, 148, 128],
       undefined,
-      "concrete",
+      "roof",
       "brick",
     );
   }
 
-  // Yokohama Hammerhead Cruise Terminal + Crane silhouette
+  // Yokohama Hammerhead Cruise Terminal + detailed Hammerhead Crane
   addExtrudedPrism(
     triangles,
     orientedRectXY(hhCenter[0], hhCenter[1], 92, 34, rb2Angle + 0.15),
@@ -1011,43 +1785,77 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     [184, 190, 196],
     [214, 216, 220],
     [154, 162, 172],
-    [176, 184, 194],
+    [174, 184, 196],
     undefined,
     "concrete",
-    "concrete",
+    "glass",
   );
-  // Hammerhead Crane tower & jib on the pier apron
   addExtrudedPrism(
     triangles,
-    orientedRectXY(hhCenter[0] + 48, hhCenter[1] + 22, 10, 10, rb2Angle),
-    2.0,
-    28.0,
+    orientedRectXY(hhCenter[0], hhCenter[1], 80, 26, rb2Angle + 0.15),
+    20.0,
+    21.8,
+    FEATURE_IDS.HAMMERHEAD,
+    SURFACE_KIND.BUILDING,
+    SURFACE_KIND.BUILDING,
+    [194, 168, 138],
+    [212, 180, 142],
+    [172, 148, 122],
+    [188, 160, 128],
+    undefined,
+    "wood",
+    "wood",
+  );
+  // Hammerhead Crane portal legs, turntable & cantilevered orange jib
+  for (const legOff of [-5, 5]) {
+    addExtrudedPrism(
+      triangles,
+      orientedRectXY(hhCenter[0] + 48 + legOff, hhCenter[1] + 22, 3.2, 11, rb2Angle),
+      2.0,
+      24.0,
+      FEATURE_IDS.HAMMERHEAD,
+      SURFACE_KIND.BUILDING,
+      SURFACE_KIND.BUILDING,
+      [194, 122, 68],
+      [218, 126, 60],
+      [172, 104, 56],
+      [194, 112, 52],
+      undefined,
+      "crane",
+      "crane",
+    );
+  }
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(hhCenter[0] + 48, hhCenter[1] + 22, 13, 13, rb2Angle),
+    23.5,
+    27.0,
     FEATURE_IDS.HAMMERHEAD,
     SURFACE_KIND.BUILDING,
     SURFACE_KIND.BUILDING,
     [194, 122, 68],
-    [212, 128, 64],
+    [218, 126, 60],
     [172, 104, 56],
-    [192, 114, 54],
+    [194, 112, 52],
     undefined,
-    "roof",
-    "roof",
+    "crane",
+    "crane",
   );
   addExtrudedPrism(
     triangles,
-    orientedRectXY(hhCenter[0] + 54, hhCenter[1] + 28, 34, 6, rb2Angle + 0.6),
-    26.0,
-    30.0,
+    orientedRectXY(hhCenter[0] + 54, hhCenter[1] + 28, 38, 6.5, rb2Angle + 0.6),
+    26.5,
+    30.2,
     FEATURE_IDS.HAMMERHEAD,
     SURFACE_KIND.BUILDING,
     SURFACE_KIND.BUILDING,
     [202, 130, 74],
-    [218, 134, 68],
+    [224, 134, 66],
     [176, 108, 58],
-    [194, 116, 56],
+    [198, 116, 54],
     undefined,
-    "roof",
-    "roof",
+    "crane",
+    "crane",
   );
 
   // Navios Yokohama (two towers + sky bridge)
@@ -1069,10 +1877,10 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
       [196, 192, 186],
       [226, 218, 206],
       [172, 168, 162],
-      [198, 190, 178],
+      [192, 190, 184],
       undefined,
       "concrete",
-      "concrete",
+      "glass",
     );
   }
   addExtrudedPrism(
@@ -1086,10 +1894,10 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     [196, 192, 186],
     [226, 218, 206],
     [172, 168, 162],
-    [198, 190, 178],
+    [192, 190, 184],
     undefined,
     "concrete",
-    "concrete",
+    "glass",
   );
 
   // Coast Guard Hall
@@ -1102,13 +1910,44 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     SURFACE_KIND.BUILDING,
     SURFACE_KIND.BUILDING,
     [176, 180, 186],
-    [206, 206, 210],
+    [208, 208, 212],
     [152, 156, 164],
-    [176, 180, 186],
+    [176, 182, 190],
     undefined,
     "concrete",
-    "concrete",
+    "glass",
   );
+
+  // Zou-no-hana Terrace & Southern Timber Boardwalk
+  const zonoCenter = toXY(139.6430, 35.4506);
+  addExtrudedPrism(
+    triangles,
+    orientedRectXY(zonoCenter[0], zonoCenter[1], 36, 18, rb2Angle + 0.3),
+    2.0,
+    6.4,
+    FEATURE_IDS.ZOU_NO_HANA_TERRACE,
+    SURFACE_KIND.QUAY,
+    SURFACE_KIND.QUAY,
+    [212, 218, 224],
+    [228, 224, 214],
+    [144, 172, 196],
+    [142, 178, 206],
+    undefined,
+    "concrete",
+    "glass",
+  );
+
+  // Docked Cruise Ship at Hammerhead Berth 9 & Coast Guard Patrol Vessel + harbor sailboats
+  const shipPos = toXY(139.6442, 35.4556);
+  addShip(triangles, shipPos[0], shipPos[1], 108, 18, rb2Angle + 0.15, FEATURE_IDS.CRUISE_SHIP_ASUKA, true);
+
+  const patrolPos = toXY(139.6454, 35.4534);
+  addShip(triangles, patrolPos[0], patrolPos[1], 56, 10, rb2Angle - 0.12, FEATURE_IDS.COAST_GUARD_VESSEL, false);
+
+  const sail1 = toXY(139.6456, 35.4514);
+  const sail2 = toXY(139.6435, 35.4498);
+  addSailboat(triangles, sail1[0], sail1[1], 0.6, FEATURE_IDS.HARBOR_WATER);
+  addSailboat(triangles, sail2[0], sail2[1], 2.1, FEATURE_IDS.HARBOR_WATER);
 
   // 8. Shinko Circle Walk (elevated circular pedestrian bridge, outerR 26m, innerR 19.5m)
   addAnnularBridge(
@@ -1123,6 +1962,27 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
     36,
     FEATURE_IDS.CIRCLE_WALK,
   );
+  // Radial access wings strictly perpendicular to Kokusai-Odori (never blocking bus trajectory)
+  for (const wingSign of [-1, 1]) {
+    const wx = cwCenter[0] + d1Perp[0] * wingSign * 31;
+    const wy = cwCenter[1] + d1Perp[1] * wingSign * 31;
+    addExtrudedPrism(
+      triangles,
+      orientedRectXY(wx, wy, 5.2, 12, rb2Angle),
+      5.8,
+      6.9,
+      FEATURE_IDS.CIRCLE_WALK,
+      SURFACE_KIND.BRIDGE_DECK,
+      SURFACE_KIND.BRIDGE_DECK,
+      [194, 198, 204],
+      [228, 214, 194],
+      [164, 168, 176],
+      [192, 178, 160],
+      "circle-walk-deck",
+      "deck",
+      "deck",
+    );
+  }
 
   // 9. Synthetic Bayside Blue trajectory (ground-road elevation +2.2m)
   const bearingFromVec = (dx: number, dy: number) =>
@@ -1422,6 +2282,61 @@ export function buildShinkoPilotScene(): ShinkoSceneBundle {
       ]),
       descriptionJa: "旧臨港線の鉄道橋梁を活かした運河横断プロムナード。",
       descriptionEn: "Former port rail trestle converted into a canal boardwalk.",
+      sourceKind: "documented-proxy",
+    },
+    {
+      id: "cupnoodles-museum",
+      featureId: FEATURE_IDS.CUPNOODLES_MUSEUM,
+      nameJa: "カップヌードルミュージアム 横浜",
+      nameEn: "Cup Noodles Museum Yokohama",
+      category: "landmark",
+      ...localToWgs84(camera, [cnCenter[0], cnCenter[1], 24.0]),
+      descriptionJa: "ワールドポーターズ北西に並ぶ体験型ミュージアム。",
+      descriptionEn: "Interactive food museum overlooking the northern Shinko waterfront.",
+      sourceKind: "documented-proxy",
+    },
+    {
+      id: "jica-yokohama",
+      featureId: FEATURE_IDS.JICA_YOKOHAMA,
+      nameJa: "JICA 横浜",
+      nameEn: "JICA Yokohama",
+      category: "landmark",
+      ...localToWgs84(camera, [jicaCenter[0], jicaCenter[1], 20.0]),
+      descriptionJa: "新港中央広場南西側に建つ国際協力機構の拠点施設。",
+      descriptionEn: "International cooperation center framing Shinko Central Square.",
+      sourceKind: "documented-proxy",
+    },
+    {
+      id: "shinko-central-square",
+      featureId: FEATURE_IDS.SHINKO_CENTRAL_SQUARE,
+      nameJa: "新港中央広場",
+      nameEn: "Shinko Central Square",
+      category: "park",
+      ...localToWgs84(camera, [centralSqCenter[0], centralSqCenter[1], 2.3]),
+      descriptionJa: "サークルウォークと赤レンガ倉庫を結ぶ芝生と花壇の広場。",
+      descriptionEn: "Landscaped promenade connecting Circle Walk and the Red Brick plaza.",
+      sourceKind: "documented-proxy",
+    },
+    {
+      id: "bankoku-bridge",
+      featureId: FEATURE_IDS.BANKOKU_BRIDGE,
+      nameJa: "万国橋",
+      nameEn: "Bankoku Bridge",
+      category: "bridge",
+      ...localToWgs84(camera, [(bankokuA[0] + bankokuB[0]) * 0.5, (bankokuA[1] + bankokuB[1]) * 0.5, 2.6]),
+      descriptionJa: "国際大通りが運河を渡る歴史的なコンクリートアーチ橋。",
+      descriptionEn: "Historic concrete arch bridge carrying Kokusai-Odori into Shinko.",
+      sourceKind: "documented-proxy",
+    },
+    {
+      id: "zou-no-hana-terrace",
+      featureId: FEATURE_IDS.ZOU_NO_HANA_TERRACE,
+      nameJa: "象の鼻テラス",
+      nameEn: "Zou-no-hana Terrace",
+      category: "pier",
+      ...localToWgs84(camera, [zonoCenter[0], zonoCenter[1], 6.4]),
+      descriptionJa: "赤レンガパーク南東の海辺に面した開港記念アートスペース。",
+      descriptionEn: "Waterfront glass pavilion and boardwalk facing Osanbashi.",
       sourceKind: "documented-proxy",
     },
   ];

@@ -400,6 +400,10 @@ export class WebGLOverlay {
           tint = [1.22, 1.22, 1.05];
         }
         gl.uniform3f(gl.getUniformLocation(this.vehicleProg, "u_tint"), tint[0], tint[1], tint[2]);
+        gl.uniform1f(
+          gl.getUniformLocation(this.vehicleProg, "u_isSelected"),
+          opts.selectedVehicleId === v.entityId ? 1 : 0,
+        );
         gl.drawArrays(gl.TRIANGLES, 0, this.vehicleVertexCount);
       }
     }
