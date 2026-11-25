@@ -1,204 +1,206 @@
-# Small Yokohama · スモール横浜
+# Small Yokohama
 
-[日本語 (README.ja.md)](README.ja.md) · [全体タイル割当・座標表](docs/tile-grid-plan.md) · [Study area (GeoJSON)](scope/waterfront.geojson) · [System design](docs/design.md) · [Development stack](docs/technology.md) · [Research & sources](docs/research.md)
+**English** · [日本語](README.ja.md) · [Tile assignments and coordinates](docs/tile-grid-plan.md) · [Study area (GeoJSON)](scope/waterfront.geojson) · [System design](docs/design.md) · [Development stack](docs/technology.md) · [Research and sources](docs/research.md)
 
 > **An interactive, zoomable miniature illustration of Yokohama's waterfront** — inspired by [Small SF](https://smallsf.com/).  
-> 横浜駅からみなとみらい・新港・赤レンガ倉庫を経て山下公園・元町中華街までを、45°正射影の Ligne-Claire 手描きミニチュア地図と実測交通オーバーレイで再現するオープンプロジェクトです。**全 23 / 23 タイル（先行パイロット 4 ＋ フェーズ A 12 ＋ フェーズ B 7）を `15,488 × 5,888 px` の 1 枚パノラマへシームレス連結し、DZI ピラミッド＋全体ビューア（`full-yokohama-v1`）をビルド完了しました！**
+> This open project recreates the waterfront from Yokohama Station through Minato Mirai, Shinko, the Red Brick Warehouse, and Yamashita Park to Motomachi and Chinatown. It combines a 45° orthographic miniature map with ligne claire linework and an overlay based on observed traffic. **All 23 tiles (4 pilot, 12 Phase A, and 7 Phase B) are stitched into a single `15,488 × 5,888 px` panorama. The Deep Zoom Image (DZI) pyramids and full-map viewer are built as `full-yokohama-v1`.**
+
+A blue articulated bus turns a warehouse corner and slips behind the building. Pan along the waterfront to reach Yamashita Park.
 
 ---
 
-## 現在の制作進捗（全 23 / 23 タイル完成・全体 1 枚連結ビルド完了！）
+## Production status (all 23 tiles complete)
 
-> 全 23 タイルの DP 最小色差シーム連結（21 本の縦境界 ＋ 2 本の横境界すべて合格）・`illustrated.dzi` / `plain.dzi` ピラミッド・`7,744 × 2,944` 深度＆フィーチャー ID データタイル生成・全体ビューア統合が完了しました。
+> The build stitches all 23 tiles with minimum-color-difference seams computed using dynamic programming (DP). All 21 vertical and 2 horizontal seam checks passed. It includes `illustrated.dzi` and `plain.dzi`, `7,744 × 2,944` depth and feature ID tiles, and the integrated full-map viewer.
 
-- [x] **先行パイロット** (`pilot`: 4/4 完了) — ハンマーヘッド・大さん橋・赤レンガ倉庫・ワールドポーターズ・汽車道・横浜スタジアム・日本大通り
-- [x] **担当 1** (`phase-a-1`: 4/4 完了 / `moruku36`) — 山下公園・氷川丸・横浜マリンタワー・横浜中華街・山下ふ頭・港の見える丘公園・元町
-- [x] **担当 2** (`phase-a-2`: 4/4 完了 / `moruku36`) — 横浜ランドマークタワー・クイーンズスクエア・パシフィコ横浜・臨港パーク・新高島・日産本社・中央卸売市場
-- [x] **担当 3** (`phase-a-3`: 4/4 完了 / `moruku36`) — 横浜駅東西・そごう・スカイビル・ベイクォーター・ポートサイド・鶴屋町・反町公園・西神奈川高台
-- [x] **担当 4** (`phase-b-1`: 4/4 完了 / `moruku36`) — 山手南・元町南側内陸・石川町駅・中村川・関内駅・大通り公園・野毛・日ノ出町・大岡川
-- [x] **担当 5** (`phase-b-2`: 3/3 完了 / `moruku36`) — 紅葉坂・掃部山・戸部駅・国道1号・石崎川・平沼橋・球形ガスホルダー・岡野公園
+- [x] **Shinko pilot** (`pilot`, 4/4 complete) — Yokohama Hammerhead, Osanbashi Pier, Red Brick Warehouse, World Porters, Kishamichi Promenade, Yokohama Stadium, and Nihon-odori
+- [x] **Assignment 1** (`phase-a-1`, 4/4 complete, `moruku36`) — Yamashita Park, Hikawa Maru, Yokohama Marine Tower, Yokohama Chinatown, Yamashita Pier, Harbor View Park, and Motomachi
+- [x] **Assignment 2** (`phase-a-2`, 4/4 complete, `moruku36`) — Yokohama Landmark Tower, Queen's Square, Pacifico Yokohama, Rinko Park, Shin-Takashima, Nissan headquarters, and the Central Wholesale Market
+- [x] **Assignment 3** (`phase-a-3`, 4/4 complete, `moruku36`) — Yokohama Station east and west exits, Sogo, Sky Building, Yokohama Bay Quarter, Portside, Tsuruyacho, Tammachi Park, and the Nishi-Kanagawa uplands
+- [x] **Assignment 4** (`phase-b-1`, 4/4 complete, `moruku36`) — southern Yamate, inland south of Motomachi, Ishikawacho Station, Nakamura River, Kannai Station, Odori Park, Noge, Hinodecho, and the Ooka River
+- [x] **Assignment 5** (`phase-b-2`, 3/3 complete, `moruku36`) — Momijizaka, Kamonyama, Tobe Station, National Route 1, Ishizaki River, Hiranumabashi, the spherical gas holders, and Okano Park
 
 ---
 
-## 横浜臨海部 全 23 タイル シームレス結合パノラマ（`15,488 × 5,888 px`）
+## Yokohama waterfront panorama (23 tiles, `15,488 × 5,888 px`)
 
-国土地理院 `z=18` 空中写真＋OpenStreetMap 3D 地物を 45° 正射影カメラで固定レンダリングし、1枚ずつ Ligne-Claire インク＋暖色系ガッシュ画風へ清書した全 23 タイルを 128px 重複帯の DP 最小色差接続（14px フェザリング）で 1 枚に統合した成果物です。
+All 23 tiles use a fixed 45° orthographic camera, with `z=18` aerial imagery from the Geospatial Information Authority of Japan (GSI) and 3D features from OpenStreetMap. Each tile was illustrated in ligne claire ink and warm gouache colors. The tiles were then stitched along minimum-color-difference seams across 128 px overlaps, with 14 px feathering.
 
-![横浜臨海部 全23タイル 結合プレビュー](docs/images/full-yokohama-23tiles-preview.png)
+![Combined preview of all 23 Yokohama waterfront tiles](docs/images/full-yokohama-23tiles-preview.png)
 
-### 全体シーム 1:1 拡大検証（4タイル交差点クロス確認 `1200 × 900 px`）
+### Seam checks at 1:1 scale (four-tile intersections, `1200 × 900 px`)
 
-| 横浜駅・ベイクォーター・高島水際線 (`(3,0)-(4,1)`) | みなとみらい・ランドマーク・野毛山 (`(1,-1)-(2,0)`) |
+| Yokohama Station, Bay Quarter, and the Takashima waterfront (`(3,0)-(4,1)`) | Minato Mirai, Landmark Tower, and Nogeyama (`(1,-1)-(2,0)`) |
 | :---: | :---: |
-| ![横浜駅周辺シーム検証](docs/images/full-seam-yokohama-station.png) | ![みなとみらいシーム検証](docs/images/full-seam-minatomirai.png) |
-| **関内・野毛・大岡川・馬車道 (`(0,-1)-(1,0)`)** | **横浜スタジアム・中華街・石川町 (`(-1,-1)-(0,0)`)** |
-| ![関内・野毛シーム検証](docs/images/full-seam-kannai-noge.png) | ![中華街・横浜スタジアムシーム検証](docs/images/full-seam-yamashita-chinatown.png) |
+| ![Yokohama Station seam check](docs/images/full-seam-yokohama-station.png) | ![Minato Mirai seam check](docs/images/full-seam-minatomirai.png) |
+| **Kannai, Noge, the Ooka River, and Bashamichi (`(0,-1)-(1,0)`)** | **Yokohama Stadium, Chinatown, and Ishikawacho (`(-1,-1)-(0,0)`)** |
+| ![Kannai and Noge seam check](docs/images/full-seam-kannai-noge.png) | ![Chinatown and Yokohama Stadium seam check](docs/images/full-seam-yamashita-chinatown.png) |
 
-### 先行パイロット 4/4（128px 重複帯シームレス結合済み：`3968 × 3968 px`）
+### Shinko pilot (4/4 stitched with 128 px overlaps, `3968 × 3968 px`)
 
-![新港パイロット 4/4 結合プレビュー](docs/images/pilot-shinko-4tiles-preview.png)
+![Stitched preview of the four Shinko pilot tiles](docs/images/pilot-shinko-4tiles-preview.png)
 
-### 担当 1（`phase-a-1`：元町・山手・中華街・山下公園・氷川丸・山下ふ頭 4/4 完了）
+### Assignment 1 (`phase-a-1`, 4/4 complete) — Motomachi, Yamate, Chinatown, Yamashita Park, Hikawa Maru, and Yamashita Pier
 
-| 左上 `tile_-2_0`（港の見える丘公園・山手・元町） | 右上 `tile_-1_0`（山下公園・マリンタワー・中華街） |
+| Top left `tile_-2_0` (Harbor View Park, Yamate, and Motomachi) | Top right `tile_-1_0` (Yamashita Park, Marine Tower, and Chinatown) |
 | :---: | :---: |
 | ![tile_-2_0](data/drawn-tiles/tile_-2_0.png) | ![tile_-1_0](data/drawn-tiles/tile_-1_0.png) |
-| **左下 `tile_-2_1`（山下ふ頭南・新山下運河・はしけ泊地）** | **右下 `tile_-1_1`（山下公園海側・氷川丸・山下ふ頭北）** |
+| **Bottom left `tile_-2_1` (southern Yamashita Pier, Shin-Yamashita Canal, and the barge basin)** | **Bottom right `tile_-1_1` (Yamashita Park waterfront, Hikawa Maru, and northern Yamashita Pier)** |
 | ![tile_-2_1](data/drawn-tiles/tile_-2_1.png) | ![tile_-1_1](data/drawn-tiles/tile_-1_1.png) |
 
-### 担当 2（`phase-a-2`：みなとみらい・ランドマーク・パシフィコ・新高島・卸売市場 4/4 完了）
+### Assignment 2 (`phase-a-2`, 4/4 complete) — Minato Mirai, Landmark Tower, Pacifico Yokohama, Shin-Takashima, and the wholesale market
 
-| 左上 `tile_2_0`（ランドマーク・クイーンズ・日本丸） | 右上 `tile_3_0`（新高島・日産本社・メディアタワー） |
+| Top left `tile_2_0` (Landmark Tower, Queen's Square, and Nippon Maru) | Top right `tile_3_0` (Shin-Takashima, Nissan headquarters, and Media Tower) |
 | :---: | :---: |
 | ![tile_2_0](data/drawn-tiles/tile_2_0.png) | ![tile_3_0](data/drawn-tiles/tile_3_0.png) |
-| **左下 `tile_2_1`（パシフィコ・インターコンチ・臨港パーク）** | **右下 `tile_3_1`（高島水際線・みなとみらい大橋・中央卸売市場）** |
+| **Bottom left `tile_2_1` (Pacifico Yokohama, InterContinental, and Rinko Park)** | **Bottom right `tile_3_1` (Takashima waterfront, Minato Mirai Bridge, and Central Wholesale Market)** |
 | ![tile_2_1](data/drawn-tiles/tile_2_1.png) | ![tile_3_1](data/drawn-tiles/tile_3_1.png) |
 
-### 担当 3（`phase-a-3`：横浜駅東西・そごう・ベイクォーター・ポートサイド・鶴屋町・反町・西神奈川高台 4/4 完了）
+### Assignment 3 (`phase-a-3`, 4/4 complete) — Yokohama Station, Sogo, Bay Quarter, Portside, Tsuruyacho, Tammachi, and the Nishi-Kanagawa uplands
 
-| 左上 `tile_4_0`（横浜駅東西・そごう・スカイビル・JR横浜タワー） | 右上 `tile_5_0`（鶴屋町・新田間川・首都高三ツ沢線・反町公園） |
+| Top left `tile_4_0` (Yokohama Station east and west exits, Sogo, Sky Building, and JR Yokohama Tower) | Top right `tile_5_0` (Tsuruyacho, Aratama River, the Shuto Expressway Mitsuzawa Route, and Tammachi Park) |
 | :---: | :---: |
 | ![tile_4_0](data/drawn-tiles/tile_4_0.png) | ![tile_5_0](data/drawn-tiles/tile_5_0.png) |
-| **左下 `tile_4_1`（横浜ベイクォーター・ポートサイド・首都高横羽線）** | **右下 `tile_5_1`（西神奈川・反町北・栗田谷・斎藤分町高台）** |
+| **Bottom left `tile_4_1` (Yokohama Bay Quarter, Portside, and the Shuto Expressway Yokohane Route)** | **Bottom right `tile_5_1` (Nishi-Kanagawa, northern Tammachi, Kuritaya, and the Saitobuncho uplands)** |
 | ![tile_4_1](data/drawn-tiles/tile_4_1.png) | ![tile_5_1](data/drawn-tiles/tile_5_1.png) |
 
-### 担当 4（`phase-b-1`：山手・石川町・関内・大通り公園・野毛・大岡川 4/4 完了）
+### Assignment 4 (`phase-b-1`, 4/4 complete) — Yamate, Ishikawacho, Kannai, Odori Park, Noge, and the Ooka River
 
-| 左上 `tile_-2_-1`（山手・元町南側内陸・山手公園） | 右上 `tile_-1_-1`（石川町駅・中村川・イタリア山庭園） |
+| Top left `tile_-2_-1` (Yamate, inland south of Motomachi, and Yamate Park) | Top right `tile_-1_-1` (Ishikawacho Station, Nakamura River, and Yamate Italian Garden) |
 | :---: | :---: |
 | ![tile_-2_-1](data/drawn-tiles/tile_-2_-1.png) | ![tile_-1_-1](data/drawn-tiles/tile_-1_-1.png) |
-| **左下 `tile_0_-1`（関内駅・大通り公園・横浜BUNTAI）** | **右下 `tile_1_-1`（野毛・日ノ出町・大岡川・都橋商店街）** |
+| **Bottom left `tile_0_-1` (Kannai Station, Odori Park, and Yokohama BUNTAI)** | **Bottom right `tile_1_-1` (Noge, Hinodecho, the Ooka River, and Miyakobashi Shopping Street)** |
 | ![tile_0_-1](data/drawn-tiles/tile_0_-1.png) | ![tile_1_-1](data/drawn-tiles/tile_1_-1.png) |
 
-### 担当 5（`phase-b-2`：紅葉坂・掃部山・戸部・平沼橋・岡野公園 3/3 完了）
+### Assignment 5 (`phase-b-2`, 3/3 complete) — Momijizaka, Kamonyama, Tobe, Hiranumabashi, and Okano Park
 
-| 左 `tile_2_-1`（紅葉坂・掃部山・野毛山・県立音楽堂） | 中央 `tile_3_-1`（戸部駅・国道1号・石崎川・西区中央） | 右 `tile_4_-1`（平沼橋・ガスホルダー・イングリッシュガーデン・岡野公園） |
+| Left `tile_2_-1` (Momijizaka, Kamonyama, Nogeyama, and Kanagawa Prefectural Music Hall) | Center `tile_3_-1` (Tobe Station, National Route 1, Ishizaki River, and Chuo in Nishi Ward) | Right `tile_4_-1` (Hiranumabashi, the gas holders, Yokohama English Garden, and Okano Park) |
 | :---: | :---: | :---: |
 | ![tile_2_-1](data/drawn-tiles/tile_2_-1.png) | ![tile_3_-1](data/drawn-tiles/tile_3_-1.png) | ![tile_4_-1](data/drawn-tiles/tile_4_-1.png) |
 
-### ズーム拡大・境界シーム確認
+### Detail views and seam checks
 
-| マスター画風基準 (#1: `tile_1_1`) | 境界シーム確認（サークルウォーク〜ワールドポーターズ） |
+| Master style reference (#1, `tile_1_1`) | Seam between Circle Walk and World Porters |
 | :---: | :---: |
-| ![マスター基準タイル #1](docs/images/tile_1_1_master.png) | ![サークルウォーク境界シーム](docs/images/zoom-circlewalk-seam.png) |
-| **横浜スタジアム（`tile_0_0` 拡大）** | **汽車道・運河（`tile_1_0` 拡大）** |
-| ![横浜スタジアム拡大](docs/images/zoom-stadium.png) | ![汽車道・運河拡大](docs/images/zoom-kishamichi.png) |
+| ![Master reference tile #1](docs/images/tile_1_1_master.png) | ![Circle Walk seam](docs/images/zoom-circlewalk-seam.png) |
+| **Yokohama Stadium (detail from `tile_0_0`)** | **Kishamichi Promenade and canal (detail from `tile_1_0`)** |
+| ![Yokohama Stadium detail](docs/images/zoom-stadium.png) | ![Kishamichi Promenade and canal detail](docs/images/zoom-kishamichi.png) |
 
-- **パイロット実測 QA 結果（`viewer/public/releases/pilot-shinko-v1/qa-report.json`）**:
-  - 位置合わせ相関: 全 4 タイル **`shift=(0,0) px`**、Sobel エッジ相関 **`edgeCorr = 0.770 〜 0.858`**
-  - 8 地点 GCP 最大誤差: **`0.601 px`**（許容 `<= 8 px`）
-  - 境界シーム色差（14px DP 最小色差接続）: `6.32` / `9.83` / `23.07`（許容 `< 48`、**全境界合格**）
-  - 水域捏造ゼロ確認: `waterInventedBuildings = 0` / `voidPixels = 0`
-
----
-
-## 制作で気をつけているこだわり（品質方針）
-
-[Small SF Author's making-of](https://smallsf.com/about) の設計思想を取り入れ、見た目の可愛らしさと地図・データとしての正確さを両立するため、以下を徹底しています。
-
-1. **45° 正射影 × 奥行き（Depth）による自然な隠れ表現**  
-   すべてのタイルを同一カメラ（`azimuth = 225°`, `depression = 45°`, `0.34 m/px`）で固定し、奥行き・路面標高マップを同時生成しています。これにより、動くバスや船がサークルウォーク・建物・橋の裏に差し掛かると車体の一部だけが自然に隠れます。
-2. **国土地理院 `z=18` 空中写真＋OSM 3D による「完全ピクセル固定」**  
-   想像で街並みを描かず、航空写真と 3D 地物を隙間なく投影した `_base.png` を下絵にロックします（1px の回転・拡大・トリミングも禁止）。
-3. **画風ドリフトを防ぐ「マスター1枚固定ルール」**  
-   隣り合うタイル同士を数珠つなぎで参照すると少しずつ色味や線幅がズレます。**全タイル必ず `data/drawn-tiles/tile_1_1.png`（#1）1 枚のみを画風リファレンスに固定** してください。
-4. **水面と船舶・陸地の厳密な分離**  
-   海面だけでなく運河・川（汽車道まわり・新港橋・大岡川・中村川等）もすべて **深いティールブルー（`#226276`）** に統一します。合成時は 3D 水域マスクと 22px 船舶保護ハローを使い、船が陸地に乗り上げたり海上に架空の建物が現れたりするのを防いでいます。
-5. **128px オーバーラップ＋自動 QA ゲート**  
-   タイル間は 128px 重ねて生成し、DP 最小色差カットで継ぎ目を消しています。納品時は必ず `render:tile` の Sobel 相関で **`|shift| <= 8 px`**・**`edgeCorr >= 0.70`** を確認します。
+- **Measured pilot QA results (`viewer/public/releases/pilot-shinko-v1/qa-report.json`)**
+  - All four tiles had **`shift=(0,0) px`** and Sobel edge correlation of **`edgeCorr = 0.770 to 0.858`**.
+  - The maximum error across eight ground control points (GCPs) was **`0.601 px`** (threshold `<= 8 px`).
+  - The three seam color differences were `6.32`, `9.83`, and `23.07` (threshold `< 48`). **All seams passed** using the DP seam method with 14 px feathering.
+  - The water checks returned `waterInventedBuildings = 0` and `voidPixels = 0`.
 
 ---
 
-## 全体タイル数とチーム割り振り計画
+## Illustration and map quality standards
 
-[scope/waterfront.geojson](scope/waterfront.geojson) の横浜臨海部全体（横浜駅〜みなとみらい〜新港〜山下公園〜元町・中華街）をパイロット同一仕様（`2048 × 2048 px` / 歩進幅 `stride = 1920 px = 652.8 m` / 重複 `128 px`）で割ると、以下の通りになります。
+The [Small SF making-of](https://smallsf.com/about) inspired the miniature illustration style and the emphasis on geographic accuracy. These are the standards we use for each tile.
 
-- **全体格子サイズ**: **3 行 × 8 列 = 24 タイル**（`row = -1..1`, `col = -2..5` / 合成時 `15,488 × 5,888 px`）
-- **スコープ対象タイル**: **全 23 タイル**（北西端の `(5, -1)` のみポリゴン範囲外）
-- **完了済み**: **23 / 23 タイル全完了（100%）**（先行パイロット #1〜#4 ＋ フェーズ A 12 枚 ＋ 担当 4 `phase-b-1` 4 枚 ＋ 担当 5 `phase-b-2` 3 枚）
-- **残り制作タイル**: **0 タイル**（全 23 タイル完成・全体連結へ移行可能。矩形 24 タイル埋めの `(5,-1)` のみ範囲外）
-  - **フェーズ A（臨海・主要駅コア `row = 0..1`）**: 全 12 タイル **12/12 完了・残り 0 タイル**
-  - **フェーズ B（内陸縁辺ベルト `row = -1`）**: 全 7 タイル **7/7 完了・残り 0 タイル**
+1. **45° orthographic projection and depth-based occlusion**  
+   Every tile uses the same camera (`azimuth = 225°`, `depression = 45°`, `0.34 m/px`). We also generate depth and road elevation maps so that buses and boats can disappear partially behind Circle Walk, buildings, or bridges.
+2. **Pixel-aligned geometry from GSI `z=18` aerial imagery and OSM 3D features**  
+   Use the rendered `_base.png` as the fixed layout. Preserve the projected aerial imagery and 3D geometry at their original pixel positions, scale, and crop.
+3. **One master style reference for every tile**  
+   Referencing a chain of neighboring tiles gradually shifts colors and line weights. **Use only `data/drawn-tiles/tile_1_1.png` (#1) as the style reference for every tile.**
+4. **Keep water, vessels, and land distinct**  
+   Use the same **deep teal blue (`#226276`)** for the harbor, canals, and rivers, including the waters around Kishamichi Promenade and Shinko Bridge and the Ooka and Nakamura rivers. During compositing, a 3D water mask and a 22 px vessel protection halo keep boats off land and prevent invented buildings from appearing over water.
+5. **128 px overlaps and automated QA**  
+   Adjacent tiles overlap by 128 px and are joined along minimum-color-difference seams computed with dynamic programming. Before submitting a tile, run `render:tile` and confirm **`|shift| <= 8 px`** and **`edgeCorr >= 0.70`**.
+
+---
+
+## Tile grid and assignments
+
+The [waterfront study area](scope/waterfront.geojson) spans Yokohama Station, Minato Mirai, Shinko, Yamashita Park, Motomachi, and Chinatown. The full map uses the same grid as the pilot, with `2048 × 2048 px` tiles, a stride of `1920 px = 652.8 m`, and `128 px` overlaps.
+
+- The bounding grid has **3 rows × 8 columns = 24 cells** (`row = -1..1`, `col = -2..5`) and yields a `15,488 × 5,888 px` composite.
+- **23 tiles** intersect the study area. The northwestern cell `(5, -1)` is outside the scope.
+- **23/23 tiles are complete (100%)**: four pilot tiles (#1–#4), 12 Phase A tiles, four Phase B tiles in `phase-b-1`, and three in `phase-b-2`.
+- **Zero tiles remain.** The full panorama has been built.
+  - **Phase A** (waterfront and major station areas, `row = 0..1`) — 12/12 complete.
+  - **Phase B** (inland edge, `row = -1`) — 7/7 complete.
 
 ```text
 row \ col   -2    -1     0     1     2     3     4     5
-   -1      [B1]  [B2]  [B3]  [B4]  [B5]  [B6]  [B7]    .    <-- フェーズB 7/7 完了 ([B1..B7] 100% 完了)
-    0      [A1]  [A2]  [P4]  [P3]  [A5]  [A7]  [A9] [A11]   <-- フェーズA ([A1..A11/P1..P4 12/12 完了])
-    1      [A3]  [A4]  [P2]  [P1]  [A6]  [A8] [A10] [A12]   <-- フェーズA ([A1..A12/P1..P4 12/12 完了])
+   -1      [B1]  [B2]  [B3]  [B4]  [B5]  [B6]  [B7]    .
+    0      [A1]  [A2]  [P4]  [P3]  [A5]  [A7]  [A9] [A11]
+    1      [A3]  [A4]  [P2]  [P1]  [A6]  [A8] [A10] [A12]
 ```
 
-| フェーズ | 担当 | ブロック名 (`--block`) | 割り当てタイル | 主なエリア |
+| Phase | Assignment | Block (`--block`) | Tiles | Main areas |
 | --- | --- | --- | --- | --- |
-| 完了 | 先行パイロット | `pilot` | `(1,1), (0,1), (1,0), (0,0)`（**4/4 完了**） | ハンマーヘッド・大さん橋・赤レンガ・ワールドポーターズ・汽車道・横浜スタジアム・日本大通り |
-| 完了（**A**） | **担当 1（moruku36）** | `phase-a-1` | `(-2,0), (-1,0), (-2,1), (-1,1)`（**4/4 完了**） | 山下公園・氷川丸・マリンタワー・中華街・山下ふ頭・元町 |
-| 完了（**A**） | **担当 2（moruku36）** | `phase-a-2` | `(2,0), (2,1), (3,0), (3,1)`（**4/4 完了**） | ランドマークタワー・クイーンズスクエア・パシフィコ・臨港パーク・新高島・Kアリーナ |
-| 完了（**A**） | **担当 3（moruku36）** | `phase-a-3` | `(4,0), (4,1), (5,0), (5,1)`（**4/4 完了**） | 横浜駅東西・そごう・ベイクォーター・鶴屋町・反町・西神奈川高台 |
-| 完了（**B**） | **担当 4（moruku36）** | `phase-b-1` | `(-2,-1), (-1,-1), (0,-1), (1,-1)`（**4/4 完了**） | 山手南・石川町駅・関内駅・大通り公園・野毛・日ノ出町・大岡川 |
-| 完了（**B**） | **担当 5（moruku36）** | `phase-b-2` | `(2,-1), (3,-1), (4,-1)`（**3/3 完了**） | 紅葉坂・掃部山・戸部駅・平沼橋・ガスホルダー・岡野公園 |
+| Complete | Shinko pilot | `pilot` | `(1,1), (0,1), (1,0), (0,0)` (**4/4 complete**) | Yokohama Hammerhead, Osanbashi Pier, Red Brick Warehouse, World Porters, Kishamichi Promenade, Yokohama Stadium, and Nihon-odori |
+| Complete (**A**) | **Assignment 1 (moruku36)** | `phase-a-1` | `(-2,0), (-1,0), (-2,1), (-1,1)` (**4/4 complete**) | Yamashita Park, Hikawa Maru, Marine Tower, Chinatown, Yamashita Pier, and Motomachi |
+| Complete (**A**) | **Assignment 2 (moruku36)** | `phase-a-2` | `(2,0), (2,1), (3,0), (3,1)` (**4/4 complete**) | Landmark Tower, Queen's Square, Pacifico Yokohama, Rinko Park, Shin-Takashima, and K Arena Yokohama |
+| Complete (**A**) | **Assignment 3 (moruku36)** | `phase-a-3` | `(4,0), (4,1), (5,0), (5,1)` (**4/4 complete**) | Yokohama Station east and west exits, Sogo, Bay Quarter, Tsuruyacho, Tammachi, and the Nishi-Kanagawa uplands |
+| Complete (**B**) | **Assignment 4 (moruku36)** | `phase-b-1` | `(-2,-1), (-1,-1), (0,-1), (1,-1)` (**4/4 complete**) | southern Yamate, Ishikawacho Station, Kannai Station, Odori Park, Noge, Hinodecho, and the Ooka River |
+| Complete (**B**) | **Assignment 5 (moruku36)** | `phase-b-2` | `(2,-1), (3,-1), (4,-1)` (**3/3 complete**) | Momijizaka, Kamonyama, Tobe Station, Hiranumabashi, the gas holders, and Okano Park |
 
-全 23 タイルの中心緯度経度・ランドマーク対応表は [docs/tile-grid-plan.md](docs/tile-grid-plan.md) に記載しています。
+See the [tile grid plan](docs/tile-grid-plan.md) for center coordinates and landmarks for all 23 tiles.
 
 ---
 
-## チームメンバー向け：担当タイルの作り方（手順・モデル設定・プロンプト例）
+## Contributor guide to making a tile
 
-### ステップ 1：環境セットアップと担当ブロック用ブランチ作成
+### Step 1. Set up the workspace and create a branch for your block
 
 ```powershell
-# 例: 担当5（紅葉坂・戸部駅・平沼橋）の場合
+# Example for Assignment 5 (Momijizaka, Tobe Station, and Hiranumabashi)
 git checkout -b tile/phase-b-2-tobe-hiranumabashi
-npm.cmd install   # macOS/Linux は npm install
+npm.cmd install   # Use npm install on macOS/Linux
 ```
 
-### ステップ 2：自分の担当タイルの下絵（`_base.png`）を自動生成する
+### Step 2. Generate the base image (`_base.png`)
 
-どの列範囲（`col = -2..5, row = -1..1`）でも使える汎用ベースレンダラー `render:tile` を用意しています。担当ブロック名または任意の `<col>,<row>` を指定すると、国土地理院 `z=18` 空中写真の取得から `2048×2048 px` 正射影ベース画像の出力まで自動実行されます。
+The `render:tile` command works throughout the full grid (`col = -2..5, row = -1..1`). Pass an assignment block or a `<col>,<row>` coordinate to download GSI `z=18` aerial imagery and render a `2048 × 2048 px` orthographic base image.
 
 ```powershell
-# 担当ブロックを一括生成する例（Windows PowerShell）
+# Generate an entire assignment block in Windows PowerShell
 npm.cmd run render:tile -- --block phase-b-2
 
-# 1タイルだけ生成する例（macOS/Linux は npm run render:tile -- --tile 2,-1）
+# Generate one tile
 npm.cmd run render:tile -- --tile 2,-1
 ```
 
-出力先: `data/tile-renders/tile_{col}_{row}_base.png`（例: `tile_2_-1_base.png`）
+Output path is `data/tile-renders/tile_{col}_{row}_base.png` (for example, `tile_2_-1_base.png`).
 
-### ステップ 3：推奨する AI エージェント / モデル設定
+### Step 3. Choose the AI agent and model configuration
 
-先行 4 タイルは、以下の組み合わせ・方針で制作することで高い位置精度と画風一貫性（全 4 タイル `shift=(0,0) px`、`edgeCorr = 0.770〜0.858`）を達成できました。
+The pilot workflow below achieved consistent styling and alignment across all four tiles (`shift=(0,0) px` and `edgeCorr = 0.770 to 0.858`).
 
-- **オーケストレーター／指示役には上位の推論モデルを選ぶ（重要）**:  
-  先行 4 タイルは **`gemini-pro-orchestrator-neon` クラスのハイエンド上位モデル** で全体計画・手順管理・ベース生成・画像生成指示・Sobel 位置検証・目視チェックまでを一貫制御し、作画担当に **`image-generator` サブエージェント** を使って実現しました。軽量モデル任せにすると、角度が勝手に変わる・運河が航空写真の茶色のまま残る・周辺建物が簡略化されすぎる傾向があるため、**上位のオーケストレーター／推論モデルを選定する**のがおすすめです。
-- **参照の渡し方（必須の 2 点セット）**:
-  1. **参考思想**: [Small SF](https://smallsf.com/) / [Author's making-of](https://smallsf.com/about) に近い 45° ミニチュア建築イラスト調で作ること
-  2. **2 枚の参照画像を同時指定**:
-     - **画像 1（形状・位置 100% 固定ベース）**: `data/tile-renders/tile_{col}_{row}_base.png`
-     - **画像 2（画風・配色専用マスター）**: `data/drawn-tiles/tile_1_1.png`（※毎回必ず `#1` を参照）
+- **Choose a high-capability reasoning model to coordinate the work.**  
+  For the pilot, a `gemini-pro-orchestrator-neon`-class model handled planning, base rendering, image-generation instructions, Sobel alignment checks, and visual review. An `image-generator` subagent drew the tiles. Smaller models tended to change the camera angle, retain the brown color of canals from the aerial imagery, or oversimplify buildings.
+- **Provide both image references.**
+  1. Use the 45° miniature architectural illustration approach in [Small SF](https://smallsf.com/) and its [making-of](https://smallsf.com/about) as inspiration.
+  2. Provide these two images together:
+     - **Image 1, the fixed geometry and layout** — `data/tile-renders/tile_{col}_{row}_base.png`
+     - **Image 2, the master reference for style and color** — `data/drawn-tiles/tile_1_1.png` (always use tile #1)
 
-### ステップ 4：そのまま使えるプロンプト例（コピペ用）
+### Step 4. Use the example prompts
 
-#### 例 A：AI コーディングエージェント（Antigravity 等）に担当ブロック制作を頼む場合
+#### Example A. Ask an AI coding agent such as Antigravity to produce an assigned tile
 
 ```text
-あなたは Small Yokohama のタイル制作担当です。
-参考サイト https://smallsf.com/ と https://smallsf.com/about に近いミニチュア建築イラスト調で、
-担当タイル `tile_{col}_{row}`（例: `tile_2_-1` 紅葉坂・掃部山・戸部南寄り周辺）を作成してください。
+You are creating a tile for Small Yokohama.
+Use the miniature architectural illustration approach described at https://smallsf.com/ and https://smallsf.com/about.
+Create `tile_{col}_{row}` (for example, `tile_2_-1` around Momijizaka, Kamonyama, and southern Tobe).
 
-手順：
-1. まだなければ `npm.cmd run render:tile -- --tile {col},{row}`（macOS/Linuxは `npm`）を実行し、
-   `data/tile-renders/tile_{col}_{row}_base.png` を生成して中身を目視確認してください。
-2. `image-generator` サブエージェント（または画像生成モデル）へ以下の2画像を渡して作画してください：
-   - 参照画像1（レイアウト・建物位置を1pxも変えない固定下絵）: `data/tile-renders/tile_{col}_{row}_base.png`
-   - 参照画像2（画風・線幅・配色・水面色だけのマスター基準。※構図はコピーしない）: `data/drawn-tiles/tile_1_1.png`
-3. 生成画像を `data/drawn-tiles/tile_{col}_{row}.png`（RGB PNG）として保存し、
-   既存メタ（例: `data/drawn-tiles/tile_1_0_meta.json`）に倣って `data/drawn-tiles/tile_{col}_{row}_meta.json` を作成してください。
-4. 再度 `npm.cmd run render:tile -- --tile {col},{row}` を実行して Sobel 相関チェックを行い、
-   `|shiftDx|, |shiftDy| <= 8 px` かつ `edgeCorr >= 0.70` であること、および出力される
-   `data/drawn-tiles/tile_{col}_{row}_overlay_check.png` に二重ズレや海上の架空建物・茶色い運河が残っていないことを目視で確認してください。
+Steps:
+1. If the base image is missing, run `npm.cmd run render:tile -- --tile {col},{row}`.
+   Open `data/tile-renders/tile_{col}_{row}_base.png` and inspect it visually.
+2. Give the `image-generator` subagent or image model these two references:
+   - Image 1 (fixed layout and building positions): `data/tile-renders/tile_{col}_{row}_base.png`
+   - Image 2 (style, line weight, palette, and water color only): `data/drawn-tiles/tile_1_1.png`
+3. Save the result as `data/drawn-tiles/tile_{col}_{row}.png` (RGB PNG).
+   Create `data/drawn-tiles/tile_{col}_{row}_meta.json` using `data/drawn-tiles/tile_1_0_meta.json` as an example.
+4. Run `npm.cmd run render:tile -- --tile {col},{row}` again to check the Sobel correlation.
+   Confirm `|shiftDx|, |shiftDy| <= 8 px` and `edgeCorr >= 0.70`, then inspect
+   `data/drawn-tiles/tile_{col}_{row}_overlay_check.png` for misaligned edges, invented buildings in the water, and brown canals.
 ```
 
-#### 例 B：画像生成モデル（`image-generator` 等）へ直接渡す指示プロンプト
+#### Example B. Prompt an image generation model directly
 
 ```text
 Create a 1024x1024 illustrated architectural map tile for Small Yokohama in the exact Small SF (smallsf.com)
@@ -220,30 +222,30 @@ CRITICAL RULES:
      with detailed window mullions and rooftop HVAC units at matching 45-degree isometric scale.
 ```
 
-### ステップ 5：セルフ検証して Pull Request を出す
+### Step 5. Check your work and open a pull request
 
-1. 作成したタイルを `data/drawn-tiles/tile_{col}_{row}.png` と `data/drawn-tiles/tile_{col}_{row}_meta.json` に保存（※`_composited.png`・`_overlay_check.png`・`data/gsi-aerial/`・`data/tile-renders/` は `.gitignore` 済みなのでコミットされません）。
-2. 以下を実行して全チェック通過を確認：
+1. Save the tile as `data/drawn-tiles/tile_{col}_{row}.png` and its metadata as `data/drawn-tiles/tile_{col}_{row}_meta.json`. The `.gitignore` covers `_composited.png`, `_overlay_check.png`, `data/gsi-aerial/`, and `data/tile-renders/`.
+2. Run the following checks:
    ```powershell
    npm.cmd run render:tile -- --tile <col>,<row>
    npm.cmd run typecheck
    npm.cmd run test
    npm.cmd run build
    ```
-3. コンフリクト防止のため、**1 担当ブロック（または 1 タイル）= 1 ブランチ / 1 PR** で GitHub へ提出してください。
+3. Use **one branch and one pull request per assignment block or tile** to reduce conflicts.
 
 ---
 
-## ローカルビューア起動・全体地図ビルド
+## Run the viewer locally and build the map
 
 ```powershell
-# 全23タイル横浜パノラマ（15488x5888 DZI + 半解像データタイル + QA + プレビュー）をビルド
+# Build the 23-tile panorama (15488x5888 DZI, half-resolution data tiles, QA, and preview)
 npm.cmd run build:full
 
-# 全4タイル先行パイロット（pilot-shinko-v1）の再ビルド
+# Rebuild the four-tile Shinko pilot (pilot-shinko-v1)
 npm.cmd run build:pilot
 
-# 開発サーバー起動（http://127.0.0.1:5173）
+# Start the dev server (http://127.0.0.1:5173)
 npm.cmd run dev
 ```
 
@@ -252,5 +254,5 @@ npm.cmd run dev
 ## Credits & License
 
 - **Inspiration**: [Small SF](https://smallsf.com/) · [Author's making-of](https://smallsf.com/about) by Ari Dutilh
-- **Geographic & Aerial Sources**: [OpenStreetMap (ODbL)](https://www.openstreetmap.org/copyright) · [国土地理院（地理院タイル：シームレス空中写真 z=18）](https://maps.gsi.go.jp/development/ichiran.html) · [Project PLATEAU Yokohama FY2024](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024)
-- **Repository Code & Docs**: [MIT License](LICENSE) · [Source and credit register](docs/research.md)
+- **Geographic and aerial sources** — [OpenStreetMap (ODbL)](https://www.openstreetmap.org/copyright) · [Geospatial Information Authority of Japan (GSI seamless aerial imagery, z=18)](https://maps.gsi.go.jp/development/ichiran.html) · [Project PLATEAU Yokohama FY2024](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024)
+- **Repository code and documentation** — [MIT License](LICENSE). External data and third-party material are subject to their providers' terms. [Sources and attribution requirements](docs/research.md)
