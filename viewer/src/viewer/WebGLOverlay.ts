@@ -868,7 +868,7 @@ export class WebGLOverlay {
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
-    // 1. Fullscreen overlay (glow horizon, warm night windows, depth/grid QA)
+    // 1. Fullscreen overlay (horizon glow, road and quay light pools, depth/grid QA)
     gl.disable(gl.DEPTH_TEST);
     gl.useProgram(this.overlayProg);
     this.bindCommonDepthUniforms(this.overlayProg);

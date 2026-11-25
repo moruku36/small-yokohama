@@ -80,28 +80,17 @@ void main() {
     colOut = vec4(u_glowTint.rgb, clamp(u_glowTint.a * waterBoost, 0.0, 0.28));
   }
 
-  // City lights after dark: warm architectural windows + streetlamp pools along decks & roads
-  if (u_nightIntensity > 0.02) {
-    if (surfaceKind == 4 || surfaceKind == 5) {
-      float wx = mod(floor(v_imgPx.x * 0.28), 5.0);
-      float wy = mod(floor(v_imgPx.y * 0.28), 4.0);
-      float seed = fract(sin(dot(floor(v_imgPx * 0.28), vec2(12.9898, 78.233))) * 43758.5453);
-      if (wx < 1.4 && wy < 1.2 && seed > 0.44) {
-        vec3 warmGlow = surfaceKind == 5 ? vec3(1.0, 0.88, 0.62) : vec3(1.0, 0.80, 0.44);
-        vec4 lightCol = vec4(warmGlow, 0.66 * u_nightIntensity);
-        colOut = mix(colOut, lightCol, 0.82);
-      }
-    } else if (surfaceKind == 3 || surfaceKind == 7) {
-      vec2 cell = floor(v_imgPx / 44.0);
-      vec2 cellCenter = (cell + 0.5) * 44.0;
-      float seed = fract(sin(dot(cell, vec2(41.23, 19.71))) * 23456.78);
-      if (seed > 0.35) {
-        float dist = length(v_imgPx - cellCenter);
-        float halo = max(0.0, 1.0 - dist / 16.0);
-        if (halo > 0.01) {
-          vec4 lamp = vec4(1.0, 0.78, 0.42, halo * halo * 0.42 * u_nightIntensity);
-          colOut = vec4(mix(colOut.rgb, lamp.rgb, lamp.a), max(colOut.a, lamp.a));
-        }
+  // Streetlamp pools on roads and quays. Leave roofs and facades as drawn in the map tiles.
+  if (u_nightIntensity > 0.02 && (surfaceKind == 3 || surfaceKind == 7)) {
+    vec2 cell = floor(v_imgPx / 44.0);
+    vec2 cellCenter = (cell + 0.5) * 44.0;
+    float seed = fract(sin(dot(cell, vec2(41.23, 19.71))) * 23456.78);
+    if (seed > 0.35) {
+      float dist = length(v_imgPx - cellCenter);
+      float halo = max(0.0, 1.0 - dist / 16.0);
+      if (halo > 0.01) {
+        vec4 lamp = vec4(1.0, 0.78, 0.42, halo * halo * 0.42 * u_nightIntensity);
+        colOut = vec4(mix(colOut.rgb, lamp.rgb, lamp.a), max(colOut.a, lamp.a));
       }
     }
   }

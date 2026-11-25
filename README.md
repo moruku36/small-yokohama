@@ -34,7 +34,7 @@ A blue articulated bus turns a warehouse corner and slips behind the building. P
   - **832 intersection-split directed OSM road edges** with green/yellow/all-red signal cycles and all-way stops, car-following queues, corner slowdowns, Japanese left-hand multi-lane driving, morning/evening rush-hour & late-night density variation, up to 420 visible 3D vehicles (9 sedan colors, Yokohama taxis, white vans, box trucks, autonomous roof-pod sedans), close-zoom comic ink outlines, Gaussian headlights & brake-reactive taillights, and low-opacity building-occlusion ghosting for live buses and trains.
   - **2,650 illustrated miniature pedestrians** verified strictly onto sidewalks, plazas, and waterfront decks (`0` on roadways, railway tracks, buildings, or harbor water via 24-tile depth `surfaceKind` and citywide OSM road/rail clearance checks).
 - **Live JST solar lighting, night streetlights & live weather**:
-  - Real-time JST clock and solar altitude lighting (day, golden hour, dusk, deep night) with **1,600 city-wide OSM streetlights** and warm architectural window glows.
+  - Real-time JST clock and solar altitude lighting (day, golden hour, dusk, deep night) with **1,600 city-wide OSM streetlights**.
   - Live Yokohama weather via [`api/weather.js`](api/weather.js) (Open-Meteo), real-time temperature/status readout, animated diagonal falling rain streaks, and manual Weather toggle (`Auto / Clear / Rain` or `?weather=rain`).
 - **Bilingual (`JA` / `EN`) landmarks & POIs** — **49 landmarks & 431 POIs** including major stations (Yokohama, Sakuragicho, Kannai, Ishikawacho, Minatomirai, Shin-Takashima, etc.), Pacifico Yokohama, Yokohama Central & Kanagawa Prefectural Libraries, Kanagawa University Minato Mirai Campus, and 23 corporate headquarters.
 
