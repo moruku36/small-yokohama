@@ -32,11 +32,11 @@ A blue articulated bus turns a warehouse corner and slips behind the building. P
   - **5 real-track railway lines** (`JK` Keihin-Tohoku / Negishi, `JT` Tokaido, `JO` Yokosuka / Shonan-Shinjuku, `KK` Keikyu Main with Nogeyama Tunnel hiding, `SO` Sotetsu Main) powered by [`api/trains.js`](api/trains.js) (ODPT live feed + real-time timetable fallback) with clickable badges and detail cards.
 - **Small SF-inspired simulated street traffic & sidewalk pedestrians**:
   - **832 intersection-split directed OSM road edges** with green/yellow/all-red signal cycles and all-way stops, car-following queues, corner slowdowns, Japanese left-hand multi-lane driving, morning/evening rush-hour & late-night density variation, up to 420 visible 3D vehicles (9 sedan colors, Yokohama taxis, white vans, box trucks, autonomous roof-pod sedans), close-zoom comic ink outlines, Gaussian headlights & brake-reactive taillights, and low-opacity building-occlusion ghosting for live buses and trains.
-  - **2,650 illustrated miniature pedestrians** verified strictly onto sidewalks, plazas, and waterfront decks (`0` on roadways, railway tracks, buildings, or harbor water via 24-tile depth `surfaceKind` and citywide OSM road/rail clearance checks).
+  - **2,650 illustrated miniature pedestrians** verified strictly onto sidewalks, plazas, and waterfront decks (`0` on roadways, railway tracks, buildings, or harbor water via 24-tile depth `surfaceKind` and citywide OSM road/rail clearance checks). Citywide OSM building silhouettes (`data/yokohama-osm-buildings.json`, 32,894 footprints with heights) keep them off rooftops and out of ground the drawing paints as wall, and busy districts only place people on mapped footways, streets, squares and parks (`data/yokohama-osm-walkable.json`).
 - **Live JST solar lighting, night streetlights & live weather**:
   - Real-time JST clock and solar altitude lighting (day, golden hour, dusk, deep night) with **1,600 city-wide OSM streetlights**.
   - Live Yokohama weather via [`api/weather.js`](api/weather.js) (Open-Meteo), real-time temperature/status readout, animated diagonal falling rain streaks, and manual Weather toggle (`Auto / Clear / Rain` or `?weather=rain`).
-- **Bilingual (`JA` / `EN`) landmarks & POIs** — **49 landmarks & 440 POIs** including major stations (Yokohama, Sakuragicho, Kannai, Ishikawacho, Minatomirai, Shin-Takashima, etc.), Pacifico Yokohama, Yokohama Central & Kanagawa Prefectural Libraries, Kanagawa University Minato Mirai Campus, 23 corporate headquarters, and the shops and towers around Yokohama Station (JR Yokohama Tower & NEWoMan, Takashimaya & Sotetsu Joinus, LUMINE, More's, VIVRE).
+- **Bilingual (`JA` / `EN`) landmarks & POIs** — **49 landmarks & 446 POIs** including major stations (Yokohama, Sakuragicho, Kannai, Ishikawacho, Minatomirai, Shin-Takashima, etc.), Pacifico Yokohama, Yokohama Central & Kanagawa Prefectural Libraries, Kanagawa University Minato Mirai Campus, 23 corporate headquarters, and the shops and towers around Yokohama Station (JR Yokohama Tower & NEWoMan, Takashimaya & Sotetsu Joinus, LUMINE, More's, VIVRE), the Tsuruyacho hotels, the Katabira River, and Takashima Suisaisen and Portside parks.
 - **Small SF-style opening, sound, hover, follow & share links**:
   - Opening the map drops you through a deck of cumulus onto the city (tinted for day, dusk or night); grabbing the map ends the fall early, and `?intro=0` or reduced motion skips it.
   - The speaker button plays a harbour soundscape synthesised in Web Audio (no audio files): lapping waves, a city hum, rain when it rains, ships' horns while ships are on the water, and gulls by day.
@@ -266,10 +266,13 @@ CRITICAL RULES:
 # Build the 23-tile panorama (15488x5888 DZI, half-resolution data tiles, QA, and preview)
 npm.cmd run build:full
 
+# Fetch OSM building footprints and walkable space used to place pedestrians
+node tools/fetch-yokohama-osm-buildings.mjs
+
 # Regenerate OSM-routed buses, harbor ships, 5 rail lines, 832 traffic edges, 1600 streetlights & 2650 sidewalk pedestrians
 node tools/generate-yokohama-fleet.mjs
 
-# Enrich bilingual landmarks & POIs (49 landmarks / 440 POIs)
+# Enrich bilingual landmarks & POIs (49 landmarks / 446 POIs)
 node tools/enrich-yokohama-landmarks.mjs
 
 # Rebuild the four-tile Shinko pilot (pilot-shinko-v1)

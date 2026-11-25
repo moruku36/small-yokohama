@@ -418,6 +418,7 @@ const CATEGORY_MAP: Record<string, { en: string; ja: string }> = {
   pub: { en: "Izakaya & Pub", ja: "居酒屋・ダイニング" },
   public_bath: { en: "Bath & Spa", ja: "スパ・温浴施設" },
   public_building: { en: "Public Building", ja: "公共・官庁施設" },
+  river: { en: "River", ja: "河川" },
   restaurant: { en: "Restaurant", ja: "レストラン" },
   school: { en: "School", ja: "学校" },
   station: { en: "Station", ja: "鉄道駅" },
