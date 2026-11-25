@@ -4,6 +4,9 @@ import type { RenderedTileBuffers } from "./rasterizer.js";
 export interface StitchedPilotBuffers {
   width: number;
   height: number;
+  dataWidth?: number;
+  dataHeight?: number;
+  dataScale?: number;
   plainRgba: Uint8Array;
   illustratedRgba: Uint8Array;
   depthRgba: Uint8Array;
@@ -394,4 +397,333 @@ export function stitchWorkingTiles(
     roadElevRgba: stitchRowsVertical(roadBands.top, roadBands.bottom, fullW, tileSizePx, overlapPx, seamHoriz.cuts, 0),
     seamChecks,
   };
+}
+
+export interface GridTileEntry {
+  col: number;
+  row: number;
+  hasDrawnOverride: boolean;
+  rgba: Uint8Array;
+}
+
+export interface GridSeamPlan {
+  cols: number;
+  rows: number;
+  colOffset: number;
+  rowOffset: number;
+  tileSizePx: number;
+  overlapPx: number;
+  fullWidth: number;
+  fullHeight: number;
+  /** Row-major [rIdx * (cols - 1) + cIdx], each length tileSizePx */
+  verticalCuts: Int32Array[];
+  /** Horizontal joins [rIdx = 0 .. rows - 2], each length fullWidth */
+  horizontalCuts: Int32Array[];
+  seamChecks: SeamCheckResult[];
+}
+
+function stitchRowStripHorizontal(
+  rowTiles: readonly GridTileEntry[],
+  cols: number,
+  tileSizePx: number,
+  overlapPx: number,
+  rowVerticalCuts: readonly Int32Array[],
+  yStartInTile: number,
+  stripHeight: number,
+  featherRadiusPx: number,
+  dst: Uint8Array,
+  dstWidth: number,
+  dstBaseY = 0,
+): void {
+  const stridePx = tileSizePx - overlapPx;
+
+  for (let sy = 0; sy < stripHeight; sy++) {
+    const ty = yStartInTile + sy;
+    const dstRowOff = (dstBaseY + sy) * dstWidth * 4;
+    const srcRowOff = ty * tileSizePx * 4;
+
+    const first = rowTiles[0]!.rgba;
+    dst.set(first.subarray(srcRowOff, srcRowOff + tileSizePx * 4), dstRowOff);
+
+    for (let cIdx = 1; cIdx < cols; cIdx++) {
+      const leftRgb = rowTiles[cIdx - 1]!.rgba;
+      const rightRgb = rowTiles[cIdx]!.rgba;
+      const cuts = rowVerticalCuts[cIdx - 1]!;
+      const cutXLocal = cuts[ty]!;
+      const dstX0 = cIdx * stridePx;
+
+      for (let xLocal = 0; xLocal < overlapPx; xLocal++) {
+        const dstIdx = dstRowOff + (dstX0 + xLocal) * 4;
+        if (featherRadiusPx > 0 && Math.abs(xLocal - cutXLocal) <= featherRadiusPx) {
+          const wRight = smoothstep01(
+            (xLocal - (cutXLocal - featherRadiusPx)) / (featherRadiusPx * 2),
+          );
+          const wLeft = 1 - wRight;
+          const lo = srcRowOff + (stridePx + xLocal) * 4;
+          const ro = srcRowOff + xLocal * 4;
+          dst[dstIdx] = clampByte(leftRgb[lo]! * wLeft + rightRgb[ro]! * wRight);
+          dst[dstIdx + 1] = clampByte(leftRgb[lo + 1]! * wLeft + rightRgb[ro + 1]! * wRight);
+          dst[dstIdx + 2] = clampByte(leftRgb[lo + 2]! * wLeft + rightRgb[ro + 2]! * wRight);
+          dst[dstIdx + 3] = 255;
+        } else if (xLocal >= cutXLocal) {
+          const ro = srcRowOff + xLocal * 4;
+          dst[dstIdx] = rightRgb[ro]!;
+          dst[dstIdx + 1] = rightRgb[ro + 1]!;
+          dst[dstIdx + 2] = rightRgb[ro + 2]!;
+          dst[dstIdx + 3] = rightRgb[ro + 3]!;
+        }
+      }
+
+      dst.set(
+        rightRgb.subarray(srcRowOff + overlapPx * 4, srcRowOff + tileSizePx * 4),
+        dstRowOff + (dstX0 + overlapPx) * 4,
+      );
+    }
+  }
+}
+
+function tileKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+/**
+ * Compute all vertical and horizontal minimum-cost DP seam cuts across an arbitrary
+ * N x M grid of working tiles using only 128 px overlap strips for horizontal DP,
+ * keeping peak memory minimal on large stitches (e.g. 8 x 3 = 24 tiles).
+ */
+export function computeGridSeamPlan(
+  camera: CameraManifest,
+  tiles: readonly GridTileEntry[],
+): GridSeamPlan {
+  const { cols, rows, tileSizePx, overlapPx } = camera.workingGrid;
+  const colOffset = camera.workingGrid.colOffset ?? 0;
+  const rowOffset = camera.workingGrid.rowOffset ?? 0;
+  const stridePx = tileSizePx - overlapPx;
+  const fullWidth = cols * stridePx + overlapPx;
+  const fullHeight = rows * stridePx + overlapPx;
+
+  const byKey = new Map<string, GridTileEntry>();
+  for (const t of tiles) {
+    byKey.set(tileKey(t.col, t.row), t);
+  }
+  const getTile = (col: number, row: number): GridTileEntry => {
+    const t = byKey.get(tileKey(col, row));
+    if (!t) throw new Error(`Missing grid tile (${col}, ${row})`);
+    return t;
+  };
+
+  const seamChecks: SeamCheckResult[] = [];
+  const verticalCuts: Int32Array[] = [];
+  const rowCutsByRow: Int32Array[][] = [];
+
+  for (let rIdx = 0; rIdx < rows; rIdx++) {
+    const row = rowOffset + rIdx;
+    const rowCuts: Int32Array[] = [];
+    for (let cIdx = 0; cIdx < cols - 1; cIdx++) {
+      const colL = colOffset + cIdx;
+      const colR = colL + 1;
+      const tL = getTile(colL, row);
+      const tR = getTile(colR, row);
+      const seam = findMinVerticalSeam(
+        tL.rgba,
+        tileSizePx,
+        tR.rgba,
+        tileSizePx,
+        tileSizePx,
+        overlapPx,
+      );
+      const thresh = seamThreshold(tL.hasDrawnOverride, tR.hasDrawnOverride);
+      verticalCuts.push(seam.cuts);
+      rowCuts.push(seam.cuts);
+      seamChecks.push({
+        seamId: `v-r${row}-c${colL}_${colR}`,
+        orientation: "vertical",
+        lengthPx: tileSizePx,
+        meanColorDiff: Number(seam.meanDiff.toFixed(4)),
+        maxColorDiff: seam.maxDiff,
+        passed: seam.meanDiff <= thresh,
+      });
+    }
+    rowCutsByRow.push(rowCuts);
+  }
+
+  // Compute horizontal seams using thin (fullWidth x overlapPx) stitched strips per row join
+  const horizontalCuts: Int32Array[] = [];
+  const topStrip = new Uint8Array(fullWidth * overlapPx * 4);
+  const botStrip = new Uint8Array(fullWidth * overlapPx * 4);
+
+  for (let rIdx = 0; rIdx < rows - 1; rIdx++) {
+    const rowTop = rowOffset + rIdx;
+    const rowBot = rowTop + 1;
+    const topTiles: GridTileEntry[] = [];
+    const botTiles: GridTileEntry[] = [];
+    for (let cIdx = 0; cIdx < cols; cIdx++) {
+      topTiles.push(getTile(colOffset + cIdx, rowTop));
+      botTiles.push(getTile(colOffset + cIdx, rowBot));
+    }
+
+    stitchRowStripHorizontal(
+      topTiles,
+      cols,
+      tileSizePx,
+      overlapPx,
+      rowCutsByRow[rIdx]!,
+      tileSizePx - overlapPx,
+      overlapPx,
+      14,
+      topStrip,
+      fullWidth,
+      0,
+    );
+    stitchRowStripHorizontal(
+      botTiles,
+      cols,
+      tileSizePx,
+      overlapPx,
+      rowCutsByRow[rIdx + 1]!,
+      0,
+      overlapPx,
+      14,
+      botStrip,
+      fullWidth,
+      0,
+    );
+
+    const seam = findMinHorizontalSeam(topStrip, overlapPx, botStrip, fullWidth, overlapPx);
+    let worstThresh = 8.0;
+    for (let cIdx = 0; cIdx < cols; cIdx++) {
+      worstThresh = Math.max(
+        worstThresh,
+        seamThreshold(topTiles[cIdx]!.hasDrawnOverride, botTiles[cIdx]!.hasDrawnOverride),
+      );
+    }
+
+    horizontalCuts.push(seam.cuts);
+    seamChecks.push({
+      seamId: `h-r${rowTop}_${rowBot}`,
+      orientation: "horizontal",
+      lengthPx: fullWidth,
+      meanColorDiff: Number(seam.meanDiff.toFixed(4)),
+      maxColorDiff: seam.maxDiff,
+      passed: seam.meanDiff <= worstThresh,
+    });
+  }
+
+  return {
+    cols,
+    rows,
+    colOffset,
+    rowOffset,
+    tileSizePx,
+    overlapPx,
+    fullWidth,
+    fullHeight,
+    verticalCuts,
+    horizontalCuts,
+    seamChecks,
+  };
+}
+
+/**
+ * Stitch any per-tile RGBA layer across the full N x M grid using a precomputed GridSeamPlan.
+ * Allocates only one output canvas plus one single-row scratch band.
+ */
+export function stitchGridRgbaLayer(
+  plan: GridSeamPlan,
+  tiles: readonly GridTileEntry[],
+  featherRadiusPx = 0,
+): Uint8Array {
+  const { cols, rows, colOffset, rowOffset, tileSizePx, overlapPx, fullWidth, fullHeight } = plan;
+  const stridePx = tileSizePx - overlapPx;
+
+  const byKey = new Map<string, GridTileEntry>();
+  for (const t of tiles) {
+    byKey.set(tileKey(t.col, t.row), t);
+  }
+  const getTile = (col: number, row: number): GridTileEntry => {
+    const t = byKey.get(tileKey(col, row));
+    if (!t) throw new Error(`Missing grid tile (${col}, ${row})`);
+    return t;
+  };
+
+  const out = new Uint8Array(fullWidth * fullHeight * 4);
+  const currBand = rows > 1 ? new Uint8Array(fullWidth * tileSizePx * 4) : null;
+
+  for (let rIdx = 0; rIdx < rows; rIdx++) {
+    const row = rowOffset + rIdx;
+    const rowTiles: GridTileEntry[] = [];
+    for (let cIdx = 0; cIdx < cols; cIdx++) {
+      rowTiles.push(getTile(colOffset + cIdx, row));
+    }
+    const rowVertCuts = plan.verticalCuts.slice(rIdx * (cols - 1), (rIdx + 1) * (cols - 1));
+
+    if (rIdx === 0) {
+      stitchRowStripHorizontal(
+        rowTiles,
+        cols,
+        tileSizePx,
+        overlapPx,
+        rowVertCuts,
+        0,
+        tileSizePx,
+        featherRadiusPx,
+        out,
+        fullWidth,
+        0,
+      );
+      continue;
+    }
+
+    stitchRowStripHorizontal(
+      rowTiles,
+      cols,
+      tileSizePx,
+      overlapPx,
+      rowVertCuts,
+      0,
+      tileSizePx,
+      featherRadiusPx,
+      currBand!,
+      fullWidth,
+      0,
+    );
+
+    const hCuts = plan.horizontalCuts[rIdx - 1]!;
+    const outBaseY = rIdx * stridePx;
+
+    for (let oy = 0; oy < overlapPx; oy++) {
+      const outY = outBaseY + oy;
+      const outRowOff = outY * fullWidth * 4;
+      const botRowOff = oy * fullWidth * 4;
+      for (let x = 0; x < fullWidth; x++) {
+        const cutY = hCuts[x]!;
+        const dst = outRowOff + x * 4;
+        if (featherRadiusPx > 0 && Math.abs(oy - cutY) <= featherRadiusPx) {
+          const wBottom = smoothstep01(
+            (oy - (cutY - featherRadiusPx)) / (featherRadiusPx * 2),
+          );
+          const wTop = 1 - wBottom;
+          const srcB = botRowOff + x * 4;
+          out[dst] = clampByte(out[dst]! * wTop + currBand![srcB]! * wBottom);
+          out[dst + 1] = clampByte(out[dst + 1]! * wTop + currBand![srcB + 1]! * wBottom);
+          out[dst + 2] = clampByte(out[dst + 2]! * wTop + currBand![srcB + 2]! * wBottom);
+          out[dst + 3] = 255;
+        } else if (oy >= cutY) {
+          const srcB = botRowOff + x * 4;
+          out[dst] = currBand![srcB]!;
+          out[dst + 1] = currBand![srcB + 1]!;
+          out[dst + 2] = currBand![srcB + 2]!;
+          out[dst + 3] = currBand![srcB + 3]!;
+        }
+      }
+    }
+
+    for (let by = overlapPx; by < tileSizePx; by++) {
+      const outY = outBaseY + by;
+      const srcStart = by * fullWidth * 4;
+      out.set(currBand!.subarray(srcStart, srcStart + fullWidth * 4), outY * fullWidth * 4);
+    }
+  }
+
+  return out;
 }

@@ -217,6 +217,7 @@ export class WebGLOverlay {
     );
 
     for (const tile of depthTiles) {
+      if (!tile.bitmap) continue;
       const layer = tile.row * cols + tile.col;
       gl.texSubImage3D(
         gl.TEXTURE_2D_ARRAY,
@@ -291,6 +292,7 @@ export class WebGLOverlay {
     gl.uniform1i(gl.getUniformLocation(prog, "u_rows"), c.dataTileGrid.rows);
     gl.uniform1f(gl.getUniformLocation(prog, "u_nearM"), c.nearM);
     gl.uniform1f(gl.getUniformLocation(prog, "u_farM"), c.farM);
+    gl.uniform1f(gl.getUniformLocation(prog, "u_dataScale"), c.dataTileGrid.scale ?? 1.0);
   }
 
   render(opts: OverlayRenderOptions): void {

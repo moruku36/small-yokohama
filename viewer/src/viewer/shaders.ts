@@ -37,6 +37,7 @@ uniform int u_cols;
 uniform int u_rows;
 uniform float u_nearM;
 uniform float u_farM;
+uniform float u_dataScale;
 
 uniform vec4 u_sunTint; // rgb + alpha
 uniform float u_showDepth;
@@ -58,7 +59,9 @@ void main() {
     return;
   }
 
-  ivec2 g = clamp(ivec2(floor(v_imgPx)), ivec2(0), ivec2(u_imageWidth - 1, u_imageHeight - 1));
+  ivec2 gFull = clamp(ivec2(floor(v_imgPx)), ivec2(0), ivec2(u_imageWidth - 1, u_imageHeight - 1));
+  ivec2 dataDim = ivec2(int(floor(float(u_imageWidth) * u_dataScale)), int(floor(float(u_imageHeight) * u_dataScale)));
+  ivec2 g = clamp(ivec2(floor(v_imgPx * u_dataScale)), ivec2(0), dataDim - ivec2(1));
   int col = min(u_cols - 1, g.x / u_dataTileSize);
   int row = min(u_rows - 1, g.y / u_dataTileSize);
   ivec2 local = ivec2(g.x - col * u_dataTileSize, g.y - row * u_dataTileSize);
@@ -95,17 +98,16 @@ void main() {
 
   if (u_showTileGrid > 0.5) {
     int stride = u_workingTileSize - u_workingOverlap;
-    bool inVertOverlap = g.x >= stride && g.x < u_workingTileSize;
-    bool inHorizOverlap = g.y >= stride && g.y < u_workingTileSize;
-    if (inVertOverlap || inHorizOverlap) {
+    int rx = gFull.x % stride;
+    int ry = gFull.y % stride;
+    bool inVertBand = gFull.x >= stride && gFull.x < (u_imageWidth - u_workingOverlap) && rx < u_workingOverlap;
+    bool inHorizBand = gFull.y >= stride && gFull.y < (u_imageHeight - u_workingOverlap) && ry < u_workingOverlap;
+    if (inVertBand || inHorizBand) {
       colOut = mix(colOut, vec4(0.95, 0.55, 0.15, 0.24), 0.75);
     }
-    if (
-      abs(g.x - stride) <= 1 ||
-      abs(g.x - u_workingTileSize) <= 1 ||
-      abs(g.y - stride) <= 1 ||
-      abs(g.y - u_workingTileSize) <= 1
-    ) {
+    bool onVertEdge = gFull.x >= stride && gFull.x <= (u_imageWidth - u_workingOverlap) && (rx <= 1 || abs(rx - u_workingOverlap) <= 1);
+    bool onHorizEdge = gFull.y >= stride && gFull.y <= (u_imageHeight - u_workingOverlap) && (ry <= 1 || abs(ry - u_workingOverlap) <= 1);
+    if (onVertEdge || onHorizEdge) {
       colOut = vec4(1.0, 0.82, 0.25, 0.92);
     }
   }
@@ -192,6 +194,7 @@ uniform int u_cols;
 uniform int u_rows;
 uniform float u_nearM;
 uniform float u_farM;
+uniform float u_dataScale;
 uniform float u_depthBiasM;
 uniform float u_xrayMode;
 uniform float u_isSelected;
@@ -212,7 +215,8 @@ void main() {
     discard;
   }
 
-  ivec2 g = clamp(ivec2(floor(v_imgPx)), ivec2(0), ivec2(u_imageWidth - 1, u_imageHeight - 1));
+  ivec2 dataDim = ivec2(int(floor(float(u_imageWidth) * u_dataScale)), int(floor(float(u_imageHeight) * u_dataScale)));
+  ivec2 g = clamp(ivec2(floor(v_imgPx * u_dataScale)), ivec2(0), dataDim - ivec2(1));
   int col = min(u_cols - 1, g.x / u_dataTileSize);
   int row = min(u_rows - 1, g.y / u_dataTileSize);
   ivec2 local = ivec2(g.x - col * u_dataTileSize, g.y - row * u_dataTileSize);
@@ -278,6 +282,7 @@ uniform int u_cols;
 uniform int u_rows;
 uniform float u_nearM;
 uniform float u_farM;
+uniform float u_dataScale;
 uniform float u_checkDepth;
 uniform vec4 u_fillColor;
 uniform vec4 u_ringColor;
@@ -290,7 +295,8 @@ void main() {
   if (dist > 1.0) discard;
 
   if (u_checkDepth > 0.5) {
-    ivec2 g = clamp(ivec2(floor(u_anchorImgPx)), ivec2(0), ivec2(u_imageWidth - 1, u_imageHeight - 1));
+    ivec2 dataDim = ivec2(int(floor(float(u_imageWidth) * u_dataScale)), int(floor(float(u_imageHeight) * u_dataScale)));
+    ivec2 g = clamp(ivec2(floor(u_anchorImgPx * u_dataScale)), ivec2(0), dataDim - ivec2(1));
     int col = min(u_cols - 1, g.x / u_dataTileSize);
     int row = min(u_rows - 1, g.y / u_dataTileSize);
     ivec2 local = ivec2(g.x - col * u_dataTileSize, g.y - row * u_dataTileSize);

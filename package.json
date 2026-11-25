@@ -13,6 +13,7 @@
     "fetch:aerial": "npm.cmd --workspace @small-yokohama/pilot-builder run fetch:aerial",
     "render:tile": "npm.cmd --workspace @small-yokohama/pilot-builder run render:tile --",
     "build:pilot": "npm.cmd --workspace @small-yokohama/pilot-builder run build:pilot",
+    "build:full": "npm.cmd --workspace @small-yokohama/pilot-builder run build:full",
     "dev": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run dev",
     "build": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run build",
     "preview": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run preview",

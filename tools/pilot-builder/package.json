@@ -11,6 +11,7 @@
     "fetch:aerial": "tsx src/fetchGsiAerial.ts",
     "render:tile": "tsx src/renderTile.ts",
     "build:pilot": "tsx src/build.ts",
+    "build:full": "tsx src/buildFull.ts",
     "typecheck": "tsc --noEmit"
   }
 }

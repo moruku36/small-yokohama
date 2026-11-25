@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createFullYokohamaCamera,
   createShinkoPilotCamera,
   dot3,
   imageToLocalOnPlane,
@@ -40,5 +41,20 @@ describe("Orthographic 45-degree camera & One Transform", () => {
     expect(back[0]).toBeCloseTo(sample[0], 6);
     expect(back[1]).toBeCloseTo(sample[1], 6);
     expect(back[2]).toBeCloseTo(sample[2], 6);
+  });
+
+  it("aligns full 23-tile Yokohama camera to exact (+3840, +1920) pixel offset from pilot", () => {
+    const fullCam = createFullYokohamaCamera();
+    expect(fullCam.imageWidthPx).toBe(15488);
+    expect(fullCam.imageHeightPx).toBe(5888);
+    expect(fullCam.workingGrid.colOffset).toBe(-2);
+    expect(fullCam.workingGrid.rowOffset).toBe(-1);
+    expect(fullCam.dataTileGrid.scale).toBe(0.5);
+
+    const pilotPt = wgs84ToImage(cam, 139.6394, 35.4531, 6.9);
+    const fullPt = wgs84ToImage(fullCam, 139.6394, 35.4531, 6.9);
+    expect(fullPt.px - pilotPt.px).toBeCloseTo(3840, 8);
+    expect(fullPt.py - pilotPt.py).toBeCloseTo(1920, 8);
+    expect(fullPt.depthM).toBeCloseTo(pilotPt.depthM, 8);
   });
 });

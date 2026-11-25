@@ -5,7 +5,10 @@ import {
   SURFACE_KIND,
   buildShinkoPilotScene,
   createShinkoPilotCamera,
+  encodeDepthRgba,
+  encodeElevationRgba,
   imageToLocalOnPlane,
+  localToImage,
   localToWgs84,
   type CameraManifest,
 } from "@small-yokohama/core";
@@ -67,7 +70,7 @@ const TEAM_BLOCKS: Record<string, ReadonlyArray<readonly [number, number]>> = {
   ],
 };
 
-function computeTileAerialBbox(camera: CameraManifest, col: number, row: number): GsiAerialBbox {
+export function computeTileAerialBbox(camera: CameraManifest, col: number, row: number): GsiAerialBbox {
   const { tileSizePx, overlapPx } = camera.workingGrid;
   const stridePx = tileSizePx - overlapPx;
   const originX = col * stridePx;
@@ -109,7 +112,7 @@ function clampByte(v: number): number {
  * Render an orthographic 2048x2048 aerial base tile outside the 2x2 Shinko 3D core
  * using the exact pilot camera affine projection and sunlit Ligne-Claire palette tone lift.
  */
-function renderAerialOnlyTile(
+export function renderAerialOnlyTile(
   camera: CameraManifest,
   col: number,
   row: number,
@@ -123,9 +126,18 @@ function renderAerialOnlyTile(
   const height = tileSizePx;
   const nPixels = width * height;
 
-  const p00 = localToWgs84(camera, imageToLocalOnPlane(camera, originPxX, originPxY, 2.0));
-  const pX0 = localToWgs84(camera, imageToLocalOnPlane(camera, originPxX + width, originPxY, 2.0));
-  const p0Y = localToWgs84(camera, imageToLocalOnPlane(camera, originPxX, originPxY + height, 2.0));
+  const loc00 = imageToLocalOnPlane(camera, originPxX, originPxY, 2.0);
+  const locX0 = imageToLocalOnPlane(camera, originPxX + width, originPxY, 2.0);
+  const loc0Y = imageToLocalOnPlane(camera, originPxX, originPxY + height, 2.0);
+  const p00 = localToWgs84(camera, loc00);
+  const pX0 = localToWgs84(camera, locX0);
+  const p0Y = localToWgs84(camera, loc0Y);
+  const d00 = localToImage(camera, loc00).depthM;
+  const dX0 = localToImage(camera, locX0).depthM;
+  const d0Y = localToImage(camera, loc0Y).depthM;
+  const dDepthDpx = (dX0 - d00) / width;
+  const dDepthDpy = (d0Y - d00) / height;
+  const groundElevEnc = encodeElevationRgba(2.0, 0, 100, true);
   const [u0, v0] = lonLatToAerialPx(aerial, p00.lon, p00.lat);
   const [ux, vx] = lonLatToAerialPx(aerial, pX0.lon, pX0.lat);
   const [uy, vy] = lonLatToAerialPx(aerial, p0Y.lon, p0Y.lat);
@@ -152,6 +164,7 @@ function renderAerialOnlyTile(
     const sy = py + 0.5;
     const rowU = u0 + sy * duDpy;
     const rowV = v0 + sy * dvDpy;
+    const rowDepth = d00 + sy * dDepthDpy;
     const rowOff = py * width;
     for (let px = 0; px < width; px++) {
       const sx = px + 0.5;
@@ -175,9 +188,18 @@ function renderAerialOnlyTile(
       illustratedRgba[o + 2] = clampByte((groundB + liftB * 0.8) * 0.913);
       illustratedRgba[o + 3] = 255;
 
+      const depthM = rowDepth + sx * dDepthDpx;
+      depthMeters[idx] = depthM;
       surfaceKinds[idx] = SURFACE_KIND.GROUND;
+      const encDepth = encodeDepthRgba(depthM, camera.nearM, camera.farM, SURFACE_KIND.GROUND);
+      depthRgba[o] = encDepth[0];
+      depthRgba[o + 1] = encDepth[1];
+      depthRgba[o + 2] = encDepth[2];
       depthRgba[o + 3] = 255;
       surfaceIdRgba[o + 3] = 255;
+      roadElevRgba[o] = groundElevEnc[0];
+      roadElevRgba[o + 1] = groundElevEnc[1];
+      roadElevRgba[o + 2] = groundElevEnc[2];
       roadElevRgba[o + 3] = 255;
     }
   }
@@ -305,7 +327,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

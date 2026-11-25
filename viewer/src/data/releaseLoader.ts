@@ -15,7 +15,7 @@ export interface LoadedTilePixels {
   row: number;
   width: number;
   height: number;
-  bitmap: ImageBitmap;
+  bitmap: ImageBitmap | null;
   rgba: Uint8Array;
 }
 
@@ -46,6 +46,7 @@ async function loadLosslessPngTile(
   url: string,
   col: number,
   row: number,
+  needRgba = true,
 ): Promise<LoadedTilePixels> {
   const res = await fetch(url);
   if (!res.ok) {
@@ -57,6 +58,17 @@ async function loadLosslessPngTile(
     colorSpaceConversion: "none",
   });
 
+  if (!needRgba) {
+    return {
+      col,
+      row,
+      width: bitmap.width,
+      height: bitmap.height,
+      bitmap,
+      rgba: new Uint8Array(0),
+    };
+  }
+
   // Extract raw RGBA bytes once for fast CPU feature picking and diagnostics
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
@@ -67,12 +79,13 @@ async function loadLosslessPngTile(
   }
   ctx.drawImage(bitmap, 0, 0);
   const imgData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+  bitmap.close();
   return {
     col,
     row,
-    width: bitmap.width,
-    height: bitmap.height,
-    bitmap,
+    width: imgData.width,
+    height: imgData.height,
+    bitmap: null,
     rgba: new Uint8Array(imgData.data.buffer),
   };
 }
@@ -106,8 +119,8 @@ export async function loadCurrentRelease(): Promise<LoadedReleaseBundle> {
       const idPath = release.layers.surfaceId.tilePattern
         .replace("{col}", String(col))
         .replace("{row}", String(row));
-      depthPromises.push(loadLosslessPngTile(`${baseReleaseUrl}/${depthPath}`, col, row));
-      idPromises.push(loadLosslessPngTile(`${baseReleaseUrl}/${idPath}`, col, row));
+      depthPromises.push(loadLosslessPngTile(`${baseReleaseUrl}/${depthPath}`, col, row, false));
+      idPromises.push(loadLosslessPngTile(`${baseReleaseUrl}/${idPath}`, col, row, true));
     }
   }
 
@@ -143,9 +156,12 @@ export function pickFeatureIdAtImagePx(
   imgY: number,
 ): number | null {
   const { camera, surfaceIdTiles } = bundle;
-  const px = Math.floor(imgX);
-  const py = Math.floor(imgY);
-  if (px < 0 || py < 0 || px >= camera.imageWidthPx || py >= camera.imageHeightPx) {
+  const scale = camera.dataTileGrid.scale ?? 1;
+  const dataW = Math.floor(camera.imageWidthPx * scale);
+  const dataH = Math.floor(camera.imageHeightPx * scale);
+  const px = Math.floor(imgX * scale);
+  const py = Math.floor(imgY * scale);
+  if (px < 0 || py < 0 || px >= dataW || py >= dataH) {
     return null;
   }
 
@@ -157,6 +173,9 @@ export function pickFeatureIdAtImagePx(
 
   const lx = px - col * tilePx;
   const ly = py - row * tilePx;
+  if (lx < 0 || ly < 0 || lx >= tile.width || ly >= tile.height) {
+    return null;
+  }
   const o = (ly * tile.width + lx) * 4;
   return decodeFeatureIdFromRgba(
     tile.rgba[o]!,

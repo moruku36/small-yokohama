@@ -97,13 +97,18 @@ export function createInitialViewerState(
   const rawZ = Number(params.get("z"));
   const rawHour = params.get("sun");
 
+  const isFullMap = camera.imageWidthPx > 5000;
+  const defaultCenterX = isFullMap ? camera.imageOriginPx.x + 200 : camera.imageWidthPx * 0.66;
+  const defaultCenterY = isFullMap ? camera.imageOriginPx.y - 300 : camera.imageHeightPx * 0.59;
+  const minZoom = isFullMap ? 0.35 : 0.6;
+
   const centerImgX = params.has("x")
     ? clampNumber(rawX, 0, camera.imageWidthPx)
-    : camera.imageWidthPx * 0.66;
+    : defaultCenterX;
   const centerImgY = params.has("y")
     ? clampNumber(rawY, 0, camera.imageHeightPx)
-    : camera.imageHeightPx * 0.59;
-  const zoom = params.has("z") ? clampNumber(rawZ, 0.6, 16) : 2.25;
+    : defaultCenterY;
+  const zoom = params.has("z") ? clampNumber(rawZ, minZoom, 16) : 2.25;
 
   let sunHourJst: number | null = 15.5;
   if (rawHour === "live") {

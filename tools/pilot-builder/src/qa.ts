@@ -39,38 +39,43 @@ export function runPilotQa(
   gcpThresholdPx = 8.0,
 ): QaReport {
   const { camera, gcps } = scene;
+  const dataW = stitched.dataWidth ?? stitched.width;
+  const dataH = stitched.dataHeight ?? stitched.height;
+  const dataScale = stitched.dataScale ?? 1;
   const gcpChecks: GcpCheckResult[] = [];
   let maxGcpDisplacementPx = 0;
 
   for (const gcp of gcps) {
     const imgPt = wgs84ToImage(camera, gcp.lon, gcp.lat, gcp.elevationM);
-    const expX = Math.round(imgPt.px);
-    const expY = Math.round(imgPt.py);
+    const expDataX = Math.round(imgPt.px * dataScale);
+    const expDataY = Math.round(imgPt.py * dataScale);
 
     let bestDist = Number.POSITIVE_INFINITY;
-    let obsX = expX;
-    let obsY = expY;
+    let obsX = imgPt.px;
+    let obsY = imgPt.py;
     let matched = false;
 
-    const searchR = 16;
+    const searchR = Math.ceil(16 * dataScale);
     for (let dy = -searchR; dy <= searchR; dy++) {
-      const py = expY + dy;
-      if (py < 0 || py >= stitched.height) continue;
+      const py = expDataY + dy;
+      if (py < 0 || py >= dataH) continue;
       for (let dx = -searchR; dx <= searchR; dx++) {
-        const px = expX + dx;
-        if (px < 0 || px >= stitched.width) continue;
-        const o = (py * stitched.width + px) * 4;
+        const px = expDataX + dx;
+        if (px < 0 || px >= dataW) continue;
+        const o = (py * dataW + px) * 4;
         const fid = decodeFeatureIdFromRgba(
           stitched.surfaceIdRgba[o]!,
           stitched.surfaceIdRgba[o + 1]!,
           stitched.surfaceIdRgba[o + 2]!,
         );
         if (fid === gcp.featureId) {
-          const dist = Math.hypot(px + 0.5 - imgPt.px, py + 0.5 - imgPt.py);
+          const fullPxX = (px + 0.5) / dataScale;
+          const fullPxY = (py + 0.5) / dataScale;
+          const dist = Math.hypot(fullPxX - imgPt.px, fullPxY - imgPt.py);
           if (dist < bestDist) {
             bestDist = dist;
-            obsX = px + 0.5;
-            obsY = py + 0.5;
+            obsX = fullPxX;
+            obsY = fullPxY;
             matched = true;
           }
         }
@@ -138,8 +143,10 @@ export function runPilotQa(
         continue;
       }
 
+      const dpx = Math.min(dataW - 1, Math.max(0, Math.floor(img.px * dataScale)));
+      const dpy = Math.min(dataH - 1, Math.max(0, Math.floor(img.py * dataScale)));
       waterSamplePixels++;
-      const o = (img.py * stitched.width + img.px) * 4;
+      const o = (dpy * dataW + dpx) * 4;
       const sk = stitched.depthRgba[o + 2]!;
       if (sk === SURFACE_KIND.BUILDING) {
         inventedBuildingPixels++;
@@ -149,7 +156,7 @@ export function runPilotQa(
 
   // Scan entire stitched depth buffer to verify zero unpainted VOID pixels
   let voidPixels = 0;
-  const totalPixels = stitched.width * stitched.height;
+  const totalPixels = dataW * dataH;
   for (let i = 0; i < totalPixels; i++) {
     if (stitched.depthRgba[i * 4 + 2] === SURFACE_KIND.VOID) {
       voidPixels++;

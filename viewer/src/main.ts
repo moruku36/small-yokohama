@@ -29,14 +29,19 @@ import {
 import { MapViewer } from "./viewer/MapViewer.js";
 
 const TV_STOP_IDS = [
+  "lm-yokohama-station",
+  "lm-bay-quarter",
+  "lm-landmark-tower",
+  "lm-pacifico",
   "lm-redbrick-2",
   "lm-circle-walk",
-  "lm-world-porters",
   "lm-hammerhead",
-  "lm-cup-noodles",
-  "lm-intercontinental",
-  "lm-pacifico",
   "lm-osanbashi",
+  "lm-yamashita-park",
+  "lm-chinatown",
+  "lm-kannai-stadium",
+  "lm-noge",
+  "lm-motomachi-yamate",
 ];
 
 async function bootstrap(): Promise<void> {
@@ -118,9 +123,10 @@ async function bootstrap(): Promise<void> {
   };
 
   const advanceTvStop = () => {
-    const tvLandmarks = TV_STOP_IDS
+    const preferred = TV_STOP_IDS
       .map((id) => bundle.landmarks.find((l) => l.id === id))
       .filter((l): l is NonNullable<typeof l> => Boolean(l));
+    const tvLandmarks = preferred.length > 0 ? preferred : bundle.landmarks.slice(0, 12);
 
     if (tvLandmarks.length === 0) return;
     const lm = tvLandmarks[tvIndex % tvLandmarks.length]!;

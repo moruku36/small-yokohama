@@ -24,6 +24,8 @@ export interface WorkingGridSpec {
   rows: number;
   tileSizePx: number;
   overlapPx: number;
+  colOffset?: number;
+  rowOffset?: number;
 }
 
 export interface DziSpec {
@@ -36,6 +38,7 @@ export interface DataTileGridSpec {
   tileSizePx: number;
   cols: number;
   rows: number;
+  scale?: number;
 }
 
 export interface CameraManifest {

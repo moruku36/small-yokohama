@@ -57,7 +57,7 @@ export class MapViewer {
       showNavigator: false,
       animationTime: state.reducedMotion ? 0 : 0.75,
       springStiffness: state.reducedMotion ? 100 : 8.5,
-      minZoomImageRatio: 0.55,
+      minZoomImageRatio: bundle.camera.imageWidthPx > 5000 ? 0.85 : 0.55,
       maxZoomPixelRatio: 6,
       visibilityRatio: 0.65,
       constrainDuringPan: true,
@@ -129,10 +129,11 @@ export class MapViewer {
   }
 
   resetView(): void {
+    const isFullMap = this.camera.imageWidthPx > 5000;
     this.applyCameraView(
       {
-        centerImgX: this.camera.imageWidthPx * 0.66,
-        centerImgY: this.camera.imageHeightPx * 0.59,
+        centerImgX: isFullMap ? this.camera.imageOriginPx.x + 200 : this.camera.imageWidthPx * 0.66,
+        centerImgY: isFullMap ? this.camera.imageOriginPx.y - 300 : this.camera.imageHeightPx * 0.59,
         zoom: 2.25,
       },
       this.state.reducedMotion,

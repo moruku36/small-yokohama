@@ -64,6 +64,38 @@ export function createShinkoPilotCamera(): CameraManifest {
   });
 }
 
+export function createFullYokohamaCamera(): CameraManifest {
+  const pilot = createShinkoPilotCamera();
+  return {
+    ...pilot,
+    imageWidthPx: 15488,
+    imageHeightPx: 5888,
+    imageOriginPx: {
+      x: pilot.imageOriginPx.x + 2 * 1920,
+      y: pilot.imageOriginPx.y + 1 * 1920,
+    },
+    workingGrid: {
+      cols: 8,
+      rows: 3,
+      tileSizePx: 2048,
+      overlapPx: 128,
+      colOffset: -2,
+      rowOffset: -1,
+    },
+    dzi: {
+      tileSize: 512,
+      overlap: 1,
+      format: "png",
+    },
+    dataTileGrid: {
+      tileSizePx: 1024,
+      cols: 8,
+      rows: 3,
+      scale: 0.5,
+    },
+  };
+}
+
 export const FEATURE_IDS = {
   HARBOR_WATER: 1,
   SHINKO_ISLAND: 2,
