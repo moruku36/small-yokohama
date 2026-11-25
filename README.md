@@ -37,6 +37,12 @@ A blue articulated bus turns a warehouse corner and slips behind the building. P
   - Real-time JST clock and solar altitude lighting (day, golden hour, dusk, deep night) with **1,600 city-wide OSM streetlights**.
   - Live Yokohama weather via [`api/weather.js`](api/weather.js) (Open-Meteo), real-time temperature/status readout, animated diagonal falling rain streaks, and manual Weather toggle (`Auto / Clear / Rain` or `?weather=rain`).
 - **Bilingual (`JA` / `EN`) landmarks & POIs** — **49 landmarks & 431 POIs** including major stations (Yokohama, Sakuragicho, Kannai, Ishikawacho, Minatomirai, Shin-Takashima, etc.), Pacifico Yokohama, Yokohama Central & Kanagawa Prefectural Libraries, Kanagawa University Minato Mirai Campus, and 23 corporate headquarters.
+- **Small SF-style opening, sound, hover, follow & share links**:
+  - Opening the map drops you through a deck of cumulus onto the city (tinted for day, dusk or night); grabbing the map ends the fall early, and `?intro=0` or reduced motion skips it.
+  - The speaker button plays a harbour soundscape synthesised in Web Audio (no audio files): lapping waves, a city hum, rain when it rains, ships' horns while ships are on the water, and gulls by day.
+  - On desktop, hovering names whatever is under the cursor: a bus and its direction, a train and its next stop, a ship, a landmark, or a building.
+  - Clicking a bus, train or moving ship follows it with the camera; dragging the map (or the card's Follow toggle) stops following.
+  - Share copies a geographic link in Small SF's form, `?at=lat,lon,<metres across>m` (e.g. `?at=35.44400,139.65050,900m`), and leaves out settings still at their defaults. Older `?x=&y=&z=` links still open.
 
 ---
 

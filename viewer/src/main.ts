@@ -4,6 +4,7 @@ import {
   type PoiRecord,
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
+import { Soundscape } from "./audio/Soundscape.js";
 import { loadCurrentRelease, type LoadedReleaseBundle } from "./data/releaseLoader.js";
 import { loadAmbientFixtures } from "./data/trafficFeed.js";
 import {
@@ -36,6 +37,7 @@ import {
   type MapVariant,
   type ViewerState,
 } from "./state.js";
+import { HoverTip, describePick } from "./ui/HoverTip.js";
 import { LabelLayer } from "./ui/LabelLayer.js";
 import { Minimap } from "./ui/Minimap.js";
 import { TransitBadgeLayer } from "./ui/TransitBadgeLayer.js";
@@ -49,7 +51,9 @@ import {
   type BooleanOptionKey,
   type UiHandlers,
 } from "./ui/renderUi.js";
+import { CloudIntro } from "./viewer/CloudIntro.js";
 import { MapViewer } from "./viewer/MapViewer.js";
+import { zoomToMetersAcross } from "./viewer/geoView.js";
 import {
   SKY_PRESETS,
   getSunDateForHourJst,
@@ -87,10 +91,32 @@ async function bootstrap(): Promise<void> {
   const osdEl = document.getElementById("osd-container")!;
   const glCanvas = document.getElementById("webgl-overlay") as HTMLCanvasElement;
 
+  // The opening: cloud covers the map while it loads, then the camera falls through it
+  const bootParams = new URLSearchParams(window.location.search);
+  const bootLang = bootParams.get("lang") === "en" ? "en" : "ja";
+  statusEl.innerHTML = `<span class="g loading">${getDict(bootLang).loadingCity}</span>`;
+  let cloudIntro: CloudIntro | null = null;
+  const reducedAtBoot = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  if (bootParams.get("intro") !== "0" && !reducedAtBoot) {
+    const sunRaw = Number(bootParams.get("sun"));
+    const bootSunHour =
+      bootParams.has("sun") && bootParams.get("sun") !== "live" && Number.isFinite(sunRaw)
+        ? sunRaw
+        : bootParams.get("theme") === "dark"
+          ? SKY_PRESETS.night
+          : null;
+    cloudIntro = new CloudIntro(
+      computeYokohamaSun(getSunDateForHourJst(bootSunHour)).altitudeDeg,
+    );
+    cloudIntro.mount();
+    document.getElementById("veil")?.setAttribute("hidden", "");
+  }
+
   let bundle: LoadedReleaseBundle;
   try {
     bundle = await loadCurrentRelease();
   } catch (err) {
+    cloudIntro?.finish();
     const msg = err instanceof Error ? err.message : String(err);
     barEl.innerHTML = `<span class="title">Small Yokohama — Failed to load release: ${msg}</span>`;
     return;
@@ -139,6 +165,8 @@ async function bootstrap(): Promise<void> {
     sessionStartDate,
   );
 
+  const soundscape = new Soundscape();
+  const hoverTip = new HoverTip();
   const labelLayer = new LabelLayer();
   const transitLayer = new TransitBadgeLayer();
   let mapViewer: MapViewer;
@@ -158,6 +186,7 @@ async function bootstrap(): Promise<void> {
 
   const selectVehicle = (rv: ResolvedVehicle) => {
     stopTv(false);
+    state.following = true;
     state.selected = {
       kind: "vehicle",
       vehicle: rv.record,
@@ -172,6 +201,7 @@ async function bootstrap(): Promise<void> {
   const selectTrain = (tr: ResolvedTrain) => {
     stopTv(false);
     const liveTr = resolvedTrains.find((x) => x.id === tr.id) ?? tr;
+    state.following = true;
     state.selected = { kind: "train", train: liveTr };
     state.activeTab = null;
     mapViewer.updateState(state, resolvedFeed, resolvedTrains);
@@ -305,6 +335,53 @@ async function bootstrap(): Promise<void> {
     }, 2000);
   };
 
+  /** Where the selected bus, train or ship is this frame (null when it is gone or stands still). */
+  const followTarget = (): { lon: number; lat: number; elevM: number } | null => {
+    const sel = state.selected;
+    if (!sel) return null;
+    if (sel.kind === "vehicle") {
+      const rv = resolvedFeed.vehicles.find((x) => x.record.entityId === sel.vehicle.entityId);
+      return rv ? { lon: rv.record.lon, lat: rv.record.lat, elevM: rv.record.roadElevationM + 1.5 } : null;
+    }
+    if (sel.kind === "train") {
+      const tr = resolvedTrains.find((x) => x.id === sel.train.id);
+      if (!tr) return null;
+      const mid = tr.cars[Math.floor(tr.cars.length / 2)];
+      return mid
+        ? { lon: mid.lon, lat: mid.lat, elevM: mid.elevM + tr.carHeightM * 0.5 }
+        : { lon: tr.lon, lat: tr.lat, elevM: 6 };
+    }
+    if (sel.kind === "portcall") {
+      const pc = resolvedFeed.portCalls.find((x) => x.id === sel.portCall.id);
+      return pc ? { lon: pc.lon, lat: pc.lat, elevM: 3.5 } : null;
+    }
+    return null;
+  };
+
+  const stopFollowing = () => {
+    if (!state.following) return;
+    state.following = false;
+    if (state.selected) {
+      renderCard(cardEl, state, resolvedFeed, 0, handlers, resolvedTrains);
+    }
+  };
+
+  /** What the soundscape hears: the weather, the sun, the ships, and how close the camera is. */
+  const syncSound = () => {
+    if (!state.soundOn) return;
+    const metersAcross = zoomToMetersAcross(bundle.camera, state.cameraView.zoom);
+    const closeness = Math.max(
+      0,
+      Math.min(1, (Math.log(8000) - Math.log(metersAcross)) / (Math.log(8000) - Math.log(150))),
+    );
+    soundscape.update({
+      rainIntensity: resolveCurrentWeather().rainIntensity,
+      sunAltitudeDeg: computeYokohamaSun(getSunDateForHourJst(state.sunHourJst)).altitudeDeg,
+      shipCount: state.showBoats ? resolvedFeed.portCalls.length : 0,
+      closeness,
+    });
+  };
+
   const handlers: UiHandlers = {
     onSetTab: (tab: DropTab) => {
       stopTv(false);
@@ -330,7 +407,7 @@ async function bootstrap(): Promise<void> {
       tvTimerId = window.setInterval(advanceTvStop, 7500);
     },
     onShare: async (anchorEl?: HTMLElement | null) => {
-      const url = serializeShareUrl(state, window.location.href);
+      const url = serializeShareUrl(state, window.location.href, bundle.camera);
       window.history.replaceState(null, "", url);
       if (navigator.clipboard?.writeText) {
         try {
@@ -437,8 +514,29 @@ async function bootstrap(): Promise<void> {
       mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
+    onToggleSound: () => {
+      if (state.soundOn) {
+        soundscape.disable();
+        state.soundOn = false;
+        renderSq(sqEl, state, handlers);
+        return;
+      }
+      state.soundOn = true;
+      syncSound();
+      void soundscape.enable().then((ok) => {
+        state.soundOn = ok;
+        if (ok) syncSound();
+        renderSq(sqEl, state, handlers);
+      });
+      renderSq(sqEl, state, handlers);
+    },
+    onToggleFollow: () => {
+      state.following = !state.following;
+      renderCard(cardEl, state, resolvedFeed, 0, handlers, resolvedTrains);
+    },
     onSelectLandmarkId: (id: string) => {
       stopTv(false);
+      state.following = false;
       const lm = bundle.landmarks.find((l) => l.id === id);
       if (!lm) return;
       state.selected = { kind: "landmark", landmark: lm };
@@ -448,6 +546,7 @@ async function bootstrap(): Promise<void> {
     },
     onSelectPoi: (poi: PoiRecord) => {
       stopTv(false);
+      state.following = false;
       state.selected = { kind: "poi", poi };
       state.activeTab = null;
       mapViewer.panToLonLat(poi.lon, poi.lat, poi.elevationM);
@@ -456,6 +555,7 @@ async function bootstrap(): Promise<void> {
     onSelectPortCall: (pc: AnimatedPortCall) => {
       stopTv(false);
       const livePc = resolvedFeed.portCalls.find((x) => x.id === pc.id) ?? pc;
+      state.following = livePc.moving !== false;
       state.selected = { kind: "portcall", portCall: livePc };
       state.activeTab = null;
       mapViewer.panToLonLat(livePc.lon, livePc.lat, 3.5);
@@ -464,6 +564,7 @@ async function bootstrap(): Promise<void> {
     onSelectTrain: selectTrain,
     onClearSelection: () => {
       stopTv(false);
+      state.following = false;
       state.selected = null;
       mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
@@ -475,6 +576,7 @@ async function bootstrap(): Promise<void> {
     onSelectTrain: selectTrain,
     onSelectLandmark: (lm) => {
       stopTv(false);
+      state.following = false;
       state.selected = { kind: "landmark", landmark: lm };
       state.activeTab = null;
       mapViewer.updateState(state, resolvedFeed, resolvedTrains);
@@ -482,6 +584,7 @@ async function bootstrap(): Promise<void> {
     },
     onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => {
       stopTv(false);
+      state.following = false;
       state.selected = { kind: "feature", feature: feat, lon, lat };
       state.activeTab = null;
       mapViewer.updateState(state, resolvedFeed, resolvedTrains);
@@ -489,6 +592,7 @@ async function bootstrap(): Promise<void> {
     },
     onSelectPortCall: (pc) => {
       stopTv(false);
+      state.following = pc.moving !== false;
       state.selected = { kind: "portcall", portCall: pc };
       state.activeTab = null;
       mapViewer.updateState(state, resolvedFeed, resolvedTrains);
@@ -496,6 +600,7 @@ async function bootstrap(): Promise<void> {
     },
     onClearSelection: () => {
       const hadUi = Boolean(state.selected || state.activeTab);
+      state.following = false;
       state.selected = null;
       state.activeTab = null;
       if (hadUi) {
@@ -508,6 +613,11 @@ async function bootstrap(): Promise<void> {
       syncViewportOverlays();
     },
     onTogglePlay: handlers.onTogglePlay,
+    onUserPan: stopFollowing,
+    onHover: (pick, x, y) => {
+      if (pick) hoverTip.show(describePick(pick, state.lang), x, y);
+      else hoverTip.hide();
+    },
     onUserInteract: () => {
       stopTv(true);
       if (state.activeTab) {
@@ -538,6 +648,14 @@ async function bootstrap(): Promise<void> {
 
   mapViewer.updateState(state, resolvedFeed, resolvedTrains, true);
   refreshUi();
+
+  if (cloudIntro) {
+    const intro = cloudIntro;
+    void mapViewer
+      .whenOpen()
+      .then(() => mapViewer.playIntro(2600, (t) => intro.setProgress(t)))
+      .finally(() => intro.finish());
+  }
 
   window.addEventListener("keydown", (e) => {
     if (
@@ -576,6 +694,7 @@ async function bootstrap(): Promise<void> {
     }
 
     const stepPx = 72;
+    if (e.key.startsWith("Arrow")) stopFollowing();
     if (e.key === "ArrowLeft") mapViewer.panByCssPx(-stepPx, 0);
     else if (e.key === "ArrowRight") mapViewer.panByCssPx(stepPx, 0);
     else if (e.key === "ArrowUp") mapViewer.panByCssPx(0, -stepPx);
@@ -649,6 +768,10 @@ async function bootstrap(): Promise<void> {
     }
   }, 15_000);
 
+  window.setInterval(() => {
+    if (state.soundOn && !document.hidden) syncSound();
+  }, 1000);
+
   let lastTs = performance.now();
   let lastUiRefreshTs = lastTs;
   let rafId = 0;
@@ -660,6 +783,15 @@ async function bootstrap(): Promise<void> {
     }
     const dtSec = Math.min(0.2, Math.max(0, (now - lastTs) / 1000));
     lastTs = now;
+
+    if (state.following) {
+      const target = followTarget();
+      if (target) {
+        mapViewer.followLonLat(target.lon, target.lat, target.elevM, dtSec);
+      } else {
+        stopFollowing();
+      }
+    }
 
     const wState = resolveCurrentWeather();
     if ((state.playing || wState.rainIntensity > 0.05) && !state.reducedMotion) {
