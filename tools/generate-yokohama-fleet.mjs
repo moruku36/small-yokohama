@@ -1106,6 +1106,215 @@ function loadDepthTiles(releaseDir, cam) {
   return { sampleKind, hasForbiddenSurfaceNearby };
 }
 
+/**
+ * Building silhouettes from OpenStreetMap footprints (data/yokohama-osm-buildings.json).
+ *
+ * The depth/surface tiles only contain the Shinko pilot's buildings, so elsewhere they
+ * call every rooftop "ground". In this 45° view a spot on the ground is covered by a
+ * building when the line from it up toward the camera passes through the building: the
+ * footprint itself, or ground behind the building that the drawing paints as wall and roof.
+ * `isCovered` tests exactly that, with a margin so people keep a step away from walls.
+ */
+// The drawing paints buildings squatter than their real height (streets between five-storey
+// blocks stay visible), so silhouettes use this fraction of the OSM height.
+const DRAWN_HEIGHT_SCALE = 0.6;
+
+function buildBuildingOcclusionIndex(rootDir, cam) {
+  const file = path.join(rootDir, "data", "yokohama-osm-buildings.json");
+  if (!fs.existsSync(file)) {
+    console.warn("[fleet] data/yokohama-osm-buildings.json missing: run tools/fetch-yokohama-osm-buildings.mjs");
+    return null;
+  }
+  const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+  const [lon0, lat0] = payload.origin;
+  const f = cam.basis.forward;
+  // horizontal step toward the camera for each metre of rise along a view ray
+  const ux = f[0] / f[2];
+  const uy = f[1] / f[2];
+  const cellM = 40;
+  const grid = new Map();
+  const buildings = [];
+
+  for (const b of payload.buildings) {
+    const h = b[0];
+    const xs = [];
+    const ys = [];
+    for (let i = 1; i + 1 < b.length; i += 2) {
+      const loc = wgs84ToLocal(cam, lon0 + b[i] / 1e6, lat0 + b[i + 1] / 1e6, 0);
+      xs.push(loc[0]);
+      ys.push(loc[1]);
+    }
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const bld = { h, xs, ys, minX, maxX, minY, maxY };
+    buildings.push(bld);
+    // a ground point can be covered from as far as h metres of rise away from the footprint,
+    // on the side away from the camera
+    const pad = 3;
+    const hd = h * DRAWN_HEIGHT_SCALE;
+    const ex0 = Math.min(minX, minX - ux * hd) - pad;
+    const ex1 = Math.max(maxX, maxX - ux * hd) + pad;
+    const ey0 = Math.min(minY, minY - uy * hd) - pad;
+    const ey1 = Math.max(maxY, maxY - uy * hd) + pad;
+    for (let cy = Math.floor(ey0 / cellM); cy <= Math.floor(ey1 / cellM); cy++) {
+      for (let cx = Math.floor(ex0 / cellM); cx <= Math.floor(ex1 / cellM); cx++) {
+        const key = `${cx}:${cy}`;
+        let list = grid.get(key);
+        if (!list) grid.set(key, (list = []));
+        list.push(bld);
+      }
+    }
+  }
+
+  const pointInPolygon = (bld, x, y) => {
+    let inside = false;
+    const { xs, ys } = bld;
+    for (let i = 0, j = xs.length - 1; i < xs.length; j = i++) {
+      if (ys[i] > y !== ys[j] > y && x < ((xs[j] - xs[i]) * (y - ys[i])) / (ys[j] - ys[i]) + xs[i]) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  };
+  const segmentsCross = (ax, ay, bx, by, cx, cy, dx, dy) => {
+    const d1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    const d2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+    const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
+    const d4 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
+    return d1 * d2 < 0 && d3 * d4 < 0;
+  };
+  /** Does the view ray from ground point (x, y) at height z pass through the building? */
+  const rayHits = (bld, x, y, z) => {
+    const rise = bld.h * DRAWN_HEIGHT_SCALE - z;
+    if (rise <= 0) return false;
+    const ex = x + ux * rise;
+    const ey = y + uy * rise;
+    if (
+      Math.max(x, ex) < bld.minX ||
+      Math.min(x, ex) > bld.maxX ||
+      Math.max(y, ey) < bld.minY ||
+      Math.min(y, ey) > bld.maxY
+    ) {
+      return false;
+    }
+    if (pointInPolygon(bld, x, y)) return true;
+    const { xs, ys } = bld;
+    for (let i = 0, j = xs.length - 1; i < xs.length; j = i++) {
+      if (segmentsCross(x, y, ex, ey, xs[j], ys[j], xs[i], ys[i])) return true;
+    }
+    return false;
+  };
+
+  const isCovered = (x, y, z, marginM = 1.8) => {
+    const list = grid.get(`${Math.floor(x / cellM)}:${Math.floor(y / cellM)}`);
+    if (!list) return false;
+    const probes = [
+      [0, 0],
+      [marginM, 0],
+      [-marginM, 0],
+      [0, marginM],
+      [0, -marginM],
+    ];
+    for (const bld of list) {
+      for (const [ox, oy] of probes) {
+        if (rayHits(bld, x + ox, y + oy, z)) return true;
+      }
+    }
+    return false;
+  };
+
+  return { isCovered, count: buildings.length };
+}
+
+/**
+ * Walkable ground from OpenStreetMap (data/yokohama-osm-walkable.json): footways, pedestrian
+ * lanes and small streets, plus squares, pedestrian areas and parks. Busy districts place people
+ * only here, so a building the drawing shows but OSM lacks cannot end up with people on its roof.
+ */
+function buildWalkableIndex(rootDir, cam) {
+  const file = path.join(rootDir, "data", "yokohama-osm-walkable.json");
+  if (!fs.existsSync(file)) {
+    console.warn("[fleet] data/yokohama-osm-walkable.json missing: run tools/fetch-yokohama-osm-buildings.mjs");
+    return null;
+  }
+  const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+  const [lon0, lat0] = payload.origin;
+  const cellM = 40;
+  const segGrid = new Map();
+  const areaGrid = new Map();
+  const toLocal = (arr) => {
+    const xs = [];
+    const ys = [];
+    for (let i = 0; i + 1 < arr.length; i += 2) {
+      const loc = wgs84ToLocal(cam, lon0 + arr[i] / 1e6, lat0 + arr[i + 1] / 1e6, 0);
+      xs.push(loc[0]);
+      ys.push(loc[1]);
+    }
+    return { xs, ys };
+  };
+  const addTo = (grid, x0, y0, x1, y1, item) => {
+    for (let cy = Math.floor(y0 / cellM); cy <= Math.floor(y1 / cellM); cy++) {
+      for (let cx = Math.floor(x0 / cellM); cx <= Math.floor(x1 / cellM); cx++) {
+        const key = `${cx}:${cy}`;
+        let list = grid.get(key);
+        if (!list) grid.set(key, (list = []));
+        list.push(item);
+      }
+    }
+  };
+  const pad = 4;
+  for (const w of payload.ways) {
+    const { xs, ys } = toLocal(w);
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const seg = { ax: xs[i], ay: ys[i], bx: xs[i + 1], by: ys[i + 1] };
+      addTo(
+        segGrid,
+        Math.min(seg.ax, seg.bx) - pad,
+        Math.min(seg.ay, seg.by) - pad,
+        Math.max(seg.ax, seg.bx) + pad,
+        Math.max(seg.ay, seg.by) + pad,
+        seg,
+      );
+    }
+  }
+  for (const a of payload.areas) {
+    const poly = toLocal(a);
+    addTo(areaGrid, Math.min(...poly.xs), Math.min(...poly.ys), Math.max(...poly.xs), Math.max(...poly.ys), poly);
+  }
+  const insidePoly = ({ xs, ys }, x, y) => {
+    let inside = false;
+    for (let i = 0, j = xs.length - 1; i < xs.length; j = i++) {
+      if (ys[i] > y !== ys[j] > y && x < ((xs[j] - xs[i]) * (y - ys[i])) / (ys[j] - ys[i]) + xs[i]) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  };
+  const segDistSq = (s, x, y) => {
+    const dx = s.bx - s.ax;
+    const dy = s.by - s.ay;
+    const len2 = dx * dx + dy * dy || 1e-9;
+    const t = Math.max(0, Math.min(1, ((x - s.ax) * dx + (y - s.ay) * dy) / len2));
+    const ex = s.ax + dx * t - x;
+    const ey = s.ay + dy * t - y;
+    return ex * ex + ey * ey;
+  };
+  /** On a mapped path or street (within halfWidthM of its centre line), or inside a square or park. */
+  const isWalkable = (x, y, halfWidthM = 2.5) => {
+    const key = `${Math.floor(x / cellM)}:${Math.floor(y / cellM)}`;
+    for (const s of segGrid.get(key) ?? []) {
+      if (segDistSq(s, x, y) <= halfWidthM * halfWidthM) return true;
+    }
+    for (const a of areaGrid.get(key) ?? []) {
+      if (insidePoly(a, x, y)) return true;
+    }
+    return false;
+  };
+  return { isWalkable };
+}
+
 function buildRoadClearanceIndex(cam, osm) {
   const cellM = 40;
   const grid = new Map();
@@ -1437,13 +1646,15 @@ function buildAmbientTraffic(cam, osm, previewPng, scaleToPreview) {
   };
 }
 
-function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scaleToPreview) {
+function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scaleToPreview, buildingOcclusion, walkable) {
   const rng = mulberry32(20261125);
   const grid = new Set();
   const points = [];
 
-  const pushPerson = (lon, lat, elevM, colorIdx, poseIdx, allowDeck = false) => {
-    const img = wgs84ToImage(cam, lon, lat, elevM);
+  const pushPerson = (lon, lat, elevM, colorIdx, poseIdx, allowDeck = false, needWalkable = false) => {
+    const raw = wgs84ToImage(cam, lon, lat, elevM);
+    // check the point exactly as it will be stored (0.1 px), so the audit below sees the same pixel
+    const img = { px: Number(raw.px.toFixed(1)), py: Number(raw.py.toFixed(1)) };
     if (
       img.px < 56 ||
       img.px > cam.imageWidthPx - 56 ||
@@ -1460,6 +1671,14 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
     }
     const loc = wgs84ToLocal(cam, lon, lat, elevM);
     if (!roadClearance.isClearOfAllRoads(loc[0], loc[1])) {
+      return false;
+    }
+    // not on a roof or behind a building where the drawing shows wall (decks like Osanbashi's
+    // rooftop plaza are public ground on purpose, and the pilot's depth data already covers them)
+    if (!allowDeck && buildingOcclusion?.isCovered(loc[0], loc[1], 0)) {
+      return false;
+    }
+    if (needWalkable && walkable && !walkable.isWalkable(loc[0], loc[1])) {
       return false;
     }
     if (!allowDeck && isWaterPixel(previewPng, img.px * scaleToPreview, img.py * scaleToPreview).ok) {
@@ -1498,20 +1717,21 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
 
   for (const h of hotspots) {
     let placed = 0;
-    for (let attempt = 0; attempt < h.n * 4 && placed < h.n; attempt++) {
+    // dense districts reject most random spots (they land on buildings): keep trying for open ground
+    for (let attempt = 0; attempt < h.n * 24 && placed < h.n; attempt++) {
       const a = rng() * Math.PI * 2;
       const r = Math.sqrt(rng());
       const lon = h.lon + Math.cos(a) * h.radLon * r;
       const lat = h.lat + Math.sin(a) * h.radLat * r;
       const colIdx = Math.floor(rng() * 8);
       const poseIdx = Math.floor(rng() * 4);
-      if (pushPerson(lon, lat, h.elevM, colIdx, poseIdx, h.allowDeck)) {
+      if (pushPerson(lon, lat, h.elevM, colIdx, poseIdx, h.allowDeck, !h.allowDeck)) {
         placed++;
         if (rng() < 0.25 && placed < h.n) {
           const companionA = rng() * Math.PI * 2;
           const partnerLon = lon + (Math.cos(companionA) * 1.4) / 90600;
           const partnerLat = lat + (Math.sin(companionA) * 1.4) / 111000;
-          if (pushPerson(partnerLon, partnerLat, h.elevM, Math.floor(rng() * 8), (poseIdx + 1) & 3, h.allowDeck)) {
+          if (pushPerson(partnerLon, partnerLat, h.elevM, Math.floor(rng() * 8), (poseIdx + 1) & 3, h.allowDeck, !h.allowDeck)) {
             placed++;
           }
         }
@@ -1550,12 +1770,20 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
       for (let k = 0; k < count; k++) {
         if (rng() > 0.78 || points.length / 4 >= 2650) continue;
         const t = (k + 0.5) / count;
-        const side = (rng() < 0.5 ? 1 : -1) * sidewalkOffsetFor(w.highway);
-        const lon = ca[0] + (cb[0] - ca[0]) * t + nx * side * offLonPerM;
-        const lat = ca[1] + (cb[1] - ca[1]) * t + ny * side * offLatPerM;
+        let side = (rng() < 0.5 ? 1 : -1) * sidewalkOffsetFor(w.highway);
+        let lon = ca[0] + (cb[0] - ca[0]) * t + nx * side * offLonPerM;
+        let lat = ca[1] + (cb[1] - ca[1]) * t + ny * side * offLatPerM;
         const colIdx = Math.floor(rng() * 8);
         const poseIdx = Math.floor(rng() * 3);
-        if (pushPerson(lon, lat, 2.2, colIdx, poseIdx, false) && rng() < 0.28) {
+        let placed = pushPerson(lon, lat, 2.2, colIdx, poseIdx, false);
+        if (!placed) {
+          // that side is under a building in the drawing: try the sidewalk across the street
+          side = -side;
+          lon = ca[0] + (cb[0] - ca[0]) * t + nx * side * offLonPerM;
+          lat = ca[1] + (cb[1] - ca[1]) * t + ny * side * offLatPerM;
+          placed = pushPerson(lon, lat, 2.2, colIdx, poseIdx, false);
+        }
+        if (placed && rng() < 0.28) {
           // Companion walks along sidewalk tangent (never stepping into the street)
           const stepAlong = (rng() < 0.5 ? 1 : -1) * 1.4;
           const pLon = lon + tx * stepAlong * offLonPerM;
@@ -2249,6 +2477,8 @@ function main() {
   const railBundle = buildYokohamaRailBundle(cam, osm);
   const streetlights = buildCityStreetlights(cam, osm, previewPng, scaleToPreview);
   const ambientTraffic = buildAmbientTraffic(cam, osm, previewPng, scaleToPreview);
+  const buildingOcclusion = buildBuildingOcclusionIndex(rootDir, cam);
+  const walkable = buildWalkableIndex(rootDir, cam);
   const pedestrians = buildPedestrians(
     cam,
     osm,
@@ -2256,6 +2486,8 @@ function main() {
     roadClearance,
     previewPng,
     scaleToPreview,
+    buildingOcclusion,
+    walkable,
   );
 
   // Hard self-audit: 0 pedestrians allowed on roadways, building interiors, or inside OSM road clearance

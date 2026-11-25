@@ -328,7 +328,8 @@ export class LabelLayer {
         const isPark = item.poi.category === "park";
         const isStation = item.poi.category === "station";
         const isCorp = item.poi.category === "corporate";
-        btn.className = `map-label tier-${item.poi.tier}${isPark ? " park" : ""}${isStation ? " station" : ""}${isCorp ? " corporate" : ""}`;
+        const isWater = item.poi.category === "river";
+        btn.className = `map-label tier-${item.poi.tier}${isPark ? " park" : ""}${isStation ? " station" : ""}${isCorp ? " corporate" : ""}${isWater ? " water" : ""}`;
         btn.style.left = `${cssX.toFixed(1)}px`;
         btn.style.top = `${cssY.toFixed(1)}px`;
         btn.textContent = item.label;

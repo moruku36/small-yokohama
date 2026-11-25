@@ -371,6 +371,16 @@ html[data-theme="dark"] .map-label.park {
   color: #b9d8a4;
 }
 
+/* rivers: water-blue italic, like a name lettered on the water */
+.map-label.water {
+  color: #2b6c84;
+  font-style: italic;
+}
+
+html[data-theme="dark"] .map-label.water {
+  color: #9fd0e0;
+}
+
 .map-label.station {
   padding-left: 19px;
   border-color: rgba(24, 62, 118, 0.24);
