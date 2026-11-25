@@ -8,15 +8,13 @@ export function isFullYokohamaCamera(camera: CameraManifest): boolean {
 
 export function computeFullMapMinZoom(
   camera: CameraManifest,
-  viewportW: number,
-  viewportH: number,
+  _viewportW: number,
+  _viewportH: number,
 ): number {
   if (!isFullYokohamaCamera(camera)) {
     return 0.55;
   }
-  const mapAspect = camera.imageWidthPx / camera.imageHeightPx;
-  const vpAspect = Math.max(0.25, viewportW / Math.max(1, viewportH));
-  return Math.max(1.0, (mapAspect / vpAspect) * 0.96);
+  return 0.85;
 }
 
 export function computeDefaultFullMapZoom(
@@ -81,8 +79,8 @@ export function computeFullMapMaxZoom(
     return 16;
   }
   const isMobile = viewportW <= 700;
-  const maxPixelRatio = isMobile ? 1.15 : 1.5;
-  const minVisibleMeters = isMobile ? 220 : 260;
+  const maxPixelRatio = isMobile ? 4.2 : 5.2;
+  const minVisibleMeters = isMobile ? 62 : 76;
   const byPixelRatio = (camera.imageWidthPx * maxPixelRatio) / Math.max(1, viewportW);
   const byMeters = camera.imageWidthPx / (minVisibleMeters / camera.metersPerPixel);
   const home = computeDefaultFullMapZoom(camera, viewportW, viewportH);

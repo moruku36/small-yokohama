@@ -44,6 +44,10 @@ html[data-theme="dark"] {
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -119,7 +123,8 @@ button {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  mix-blend-mode: multiply;
+  mix-blend-mode: normal;
+  background: transparent;
   opacity: 0;
   z-index: 2;
   transition: opacity 0.25s ease;
@@ -145,7 +150,8 @@ button {
 }
 
 .bus-pill,
-.boat-pill {
+.boat-pill,
+.train-pill {
   position: absolute;
   left: 0;
   top: 0;
@@ -247,6 +253,61 @@ button {
   box-shadow: 0 0 0 2px var(--u-coral), 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
+.train-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 28px;
+  height: 18px;
+  padding: 0 5.5px;
+  border-radius: 4px;
+  font-family: var(--u-sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  white-space: nowrap;
+  color: #fff;
+  background: #009fd4;
+  border: 1.5px solid rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.48);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.train-pill svg {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.train-pill.rl-jk {
+  background: #009fd4;
+}
+
+.train-pill.rl-jt {
+  background: #e07814;
+}
+
+.train-pill.rl-jo {
+  background: #005ab0;
+}
+
+.train-pill.rl-kk {
+  background: #d62839;
+}
+
+.train-pill.rl-so {
+  background: #1c438a;
+}
+
+.train-pill:hover,
+.train-pill.active {
+  border-color: var(--u-coral);
+  box-shadow: 0 0 0 2px var(--u-coral), 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+
 .label-layer {
   position: absolute;
   inset: 0;
@@ -308,6 +369,36 @@ button {
 
 html[data-theme="dark"] .map-label.park {
   color: #b9d8a4;
+}
+
+.map-label.station {
+  padding-left: 19px;
+  border-color: rgba(24, 62, 118, 0.24);
+}
+
+.map-label.station::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  width: 6.5px;
+  height: 6.5px;
+  margin-top: -3.25px;
+  border-radius: 50%;
+  background: #1b65b8;
+}
+
+html[data-theme="dark"] .map-label.station {
+  border-color: rgba(110, 174, 248, 0.34);
+}
+
+html[data-theme="dark"] .map-label.station::before {
+  background: #6fb5ff;
+}
+
+.map-label.corporate {
+  font-size: 13px;
+  color: var(--u-text);
 }
 
 .map-label.tier-1 {

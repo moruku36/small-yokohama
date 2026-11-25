@@ -5,6 +5,15 @@ import {
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
 import { loadCurrentRelease, type LoadedReleaseBundle } from "./data/releaseLoader.js";
+import { loadAmbientFixtures } from "./data/trafficFeed.js";
+import {
+  fetchLiveTrainsApi,
+  loadRailBundle,
+  resolveTrainsForFrame,
+  type LiveTrainApiPayload,
+  type ResolvedTrain,
+  type YokohamaRailBundle,
+} from "./data/trainFeed.js";
 import {
   fetchSnapshotForPreset,
   resolveVehiclesForFrame,
@@ -12,6 +21,12 @@ import {
   type ResolvedFeedState,
   type ResolvedVehicle,
 } from "./data/vehicleFeed.js";
+import {
+  fetchYokohamaWeather,
+  resolveWeatherState,
+  type LiveWeatherPayload,
+  type WeatherMode,
+} from "./data/weatherFeed.js";
 import { getDict } from "./i18n.js";
 import {
   createInitialViewerState,
@@ -90,15 +105,38 @@ async function bootstrap(): Promise<void> {
     { width: window.innerWidth, height: window.innerHeight },
   );
 
-  let currentSnapshot = await fetchSnapshotForPreset(
-    bundle.baseReleaseUrl,
-    state.feedPreset,
-    state.liveEndpoint,
-  );
+  const sessionStartDate = new Date();
+  let [currentSnapshot, { railBundle, streetlights }, liveTrainsApi, ambient, liveWeather] =
+    await Promise.all([
+      fetchSnapshotForPreset(bundle.baseReleaseUrl, state.feedPreset, state.liveEndpoint),
+      loadRailBundle(bundle.baseReleaseUrl),
+      fetchLiveTrainsApi(),
+      loadAmbientFixtures(bundle.baseReleaseUrl),
+      fetchYokohamaWeather(),
+    ]);
+
+  let currentWeatherPayload: LiveWeatherPayload | null = liveWeather;
+  const resolveCurrentWeather = () => {
+    const d = getDict(state.lang);
+    const sun = computeYokohamaSun(getSunDateForHourJst(state.sunHourJst));
+    return resolveWeatherState(
+      state.weatherMode,
+      currentWeatherPayload,
+      d.skyDescriptions[sun.phase],
+      state.lang,
+    );
+  };
+
   let resolvedFeed: ResolvedFeedState = resolveVehiclesForFrame(
     currentSnapshot,
     state.feedPreset,
     state.simTimeSec,
+  );
+  let resolvedTrains: ResolvedTrain[] = resolveTrainsForFrame(
+    railBundle,
+    liveTrainsApi,
+    state.simTimeSec,
+    sessionStartDate,
   );
 
   const labelLayer = new LabelLayer();
@@ -127,7 +165,16 @@ async function bootstrap(): Promise<void> {
       status: rv.freshness.status,
     };
     state.activeTab = null;
-    mapViewer.updateState(state, resolvedFeed);
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+    refreshUi();
+  };
+
+  const selectTrain = (tr: ResolvedTrain) => {
+    stopTv(false);
+    const liveTr = resolvedTrains.find((x) => x.id === tr.id) ?? tr;
+    state.selected = { kind: "train", train: liveTr };
+    state.activeTab = null;
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains);
     refreshUi();
   };
 
@@ -140,23 +187,35 @@ async function bootstrap(): Promise<void> {
       state,
       bounds,
       resolvedFeed,
+      resolvedTrains,
       selectVehicle,
       handlers.onSelectPortCall,
+      selectTrain,
     );
   };
 
   const syncViewportOverlays = () => {
     if (!mapViewer) return;
     const bounds = mapViewer.getViewportInfo();
-    labelLayer.render(labelLayerEl, bundle, state, bounds, handlers.onSelectPoi, resolvedFeed);
+    labelLayer.render(
+      labelLayerEl,
+      bundle,
+      state,
+      bounds,
+      handlers.onSelectPoi,
+      resolvedFeed,
+      resolvedTrains,
+    );
     transitLayer.render(
       transitLayerEl,
       bundle,
       state,
       bounds,
       resolvedFeed,
+      resolvedTrains,
       selectVehicle,
       handlers.onSelectPortCall,
+      selectTrain,
     );
     minimap?.render(state, bounds);
   };
@@ -175,10 +234,12 @@ async function bootstrap(): Promise<void> {
   const refreshUi = () => {
     syncDocumentPrefs();
     renderBar(barEl, state, handlers);
-    renderDrop(dropEl, state, bundle, resolvedFeed, handlers);
+    renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains);
     const drift = mapViewer ? mapViewer.measureMaxMarkerDriftCssPx() : 0;
-    renderCard(cardEl, state, resolvedFeed, drift, handlers);
-    renderStatus(statusEl, state, resolvedFeed);
+    renderCard(cardEl, state, resolvedFeed, drift, handlers, resolvedTrains);
+    const wState = resolveCurrentWeather();
+    renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText);
+    mapViewer?.setWeatherVisual(wState.rainIntensity, wState.windSlope);
     renderSq(sqEl, state, handlers);
     renderCreditAndAboutModal(creditEl, aboutModalEl, state, bundle, handlers);
     syncViewportOverlays();
@@ -206,7 +267,7 @@ async function bootstrap(): Promise<void> {
       state.liveEndpoint,
     );
     resolvedFeed = resolveVehiclesForFrame(currentSnapshot, preset, state.simTimeSec);
-    mapViewer.updateState(state, resolvedFeed);
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains);
     refreshUi();
   };
 
@@ -255,7 +316,7 @@ async function bootstrap(): Promise<void> {
     },
     onSearchQuery: (q: string) => {
       state.searchQuery = q;
-      renderDrop(dropEl, state, bundle, resolvedFeed, handlers);
+      renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains);
     },
     onToggleTv: () => {
       if (state.tvMode) {
@@ -311,7 +372,7 @@ async function bootstrap(): Promise<void> {
         : liveIsNight
           ? SKY_PRESETS.day
           : null;
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
     onZoomIn: () => {
@@ -344,7 +405,7 @@ async function bootstrap(): Promise<void> {
     },
     onChangeVariant: (v: MapVariant) => {
       state.variant = v;
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
     onChangeFeed: (f: FeedPreset) => {
@@ -354,7 +415,14 @@ async function bootstrap(): Promise<void> {
       state.sunHourJst = hour;
       const sun = computeYokohamaSun(getSunDateForHourJst(hour));
       state.theme = isNightAltitude(sun.altitudeDeg) ? "dark" : "light";
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+      refreshUi();
+    },
+    onChangeWeatherMode: (mode: WeatherMode) => {
+      state.weatherMode = mode;
+      const wState = resolveCurrentWeather();
+      mapViewer.setWeatherVisual(wState.rainIntensity, wState.windSlope);
+      mapViewer.renderOverlayFrame(false, true);
       refreshUi();
     },
     onTogglePlay: () => {
@@ -366,7 +434,7 @@ async function bootstrap(): Promise<void> {
       if (key === "reducedMotion" && state.reducedMotion) {
         state.playing = false;
       }
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
     onSelectLandmarkId: (id: string) => {
@@ -393,35 +461,37 @@ async function bootstrap(): Promise<void> {
       mapViewer.panToLonLat(livePc.lon, livePc.lat, 3.5);
       refreshUi();
     },
+    onSelectTrain: selectTrain,
     onClearSelection: () => {
       stopTv(false);
       state.selected = null;
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
   };
 
   mapViewer = new MapViewer(osdEl, glCanvas, bundle, state, {
     onSelectVehicle: selectVehicle,
+    onSelectTrain: selectTrain,
     onSelectLandmark: (lm) => {
       stopTv(false);
       state.selected = { kind: "landmark", landmark: lm };
       state.activeTab = null;
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
     onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => {
       stopTv(false);
       state.selected = { kind: "feature", feature: feat, lon, lat };
       state.activeTab = null;
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
     onSelectPortCall: (pc) => {
       stopTv(false);
       state.selected = { kind: "portcall", portCall: pc };
       state.activeTab = null;
-      mapViewer.updateState(state, resolvedFeed);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
     onClearSelection: () => {
@@ -429,7 +499,7 @@ async function bootstrap(): Promise<void> {
       state.selected = null;
       state.activeTab = null;
       if (hadUi) {
-        mapViewer.updateState(state, resolvedFeed);
+        mapViewer.updateState(state, resolvedFeed, resolvedTrains);
         refreshUi();
       }
     },
@@ -447,6 +517,18 @@ async function bootstrap(): Promise<void> {
     },
   });
 
+  if (streetlights) {
+    mapViewer.setStreetlights(streetlights);
+  }
+  if (ambient.pedestrians) {
+    mapViewer.setPedestrians(ambient.pedestrians);
+  }
+  if (ambient.traffic) {
+    mapViewer.setAmbientTraffic(ambient.traffic);
+  }
+  const initWeather = resolveCurrentWeather();
+  mapViewer.setWeatherVisual(initWeather.rainIntensity, initWeather.windSlope);
+
   if (minimapEl) {
     minimap = new Minimap(minimapEl, bundle, (imgX, imgY, imm) => {
       stopTv(true);
@@ -454,7 +536,7 @@ async function bootstrap(): Promise<void> {
     });
   }
 
-  mapViewer.updateState(state, resolvedFeed);
+  mapViewer.updateState(state, resolvedFeed, resolvedTrains, true);
   refreshUi();
 
   window.addEventListener("keydown", (e) => {
@@ -513,7 +595,7 @@ async function bootstrap(): Promise<void> {
         (snap) => {
           currentSnapshot = snap;
           resolvedFeed = resolveVehiclesForFrame(currentSnapshot, "live", state.simTimeSec);
-          mapViewer.updateState(state, resolvedFeed);
+          mapViewer.updateState(state, resolvedFeed, resolvedTrains);
           refreshUi();
         },
       );
@@ -522,7 +604,36 @@ async function bootstrap(): Promise<void> {
 
   window.setInterval(() => {
     if (document.hidden) return;
-    renderStatus(statusEl, state, resolvedFeed);
+    void fetchLiveTrainsApi().then((payload) => {
+      if (payload) {
+        liveTrainsApi = payload;
+        resolvedTrains = resolveTrainsForFrame(
+          railBundle,
+          liveTrainsApi,
+          state.simTimeSec,
+          sessionStartDate,
+        );
+        mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+        syncTransitBadges();
+      }
+    });
+  }, 20_000);
+
+  window.setInterval(() => {
+    if (document.hidden) return;
+    void fetchYokohamaWeather().then((w) => {
+      if (w) {
+        currentWeatherPayload = w;
+        const wState = resolveCurrentWeather();
+        mapViewer.setWeatherVisual(wState.rainIntensity, wState.windSlope);
+        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText);
+      }
+    });
+  }, 600_000);
+
+  window.setInterval(() => {
+    if (document.hidden) return;
+    renderStatus(statusEl, state, resolvedFeed, resolvedTrains, resolveCurrentWeather().statusText);
     if (state.sunHourJst === null) {
       const liveIsNight = isNightAltitude(
         computeYokohamaSun(getSunDateForHourJst(null)).altitudeDeg,
@@ -533,7 +644,7 @@ async function bootstrap(): Promise<void> {
         syncDocumentPrefs();
         renderSq(sqEl, state, handlers);
       }
-      mapViewer.updateState(state, resolvedFeed, true);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains, true);
       minimap?.render(state, mapViewer.getViewportInfo());
     }
   }, 15_000);
@@ -550,27 +661,51 @@ async function bootstrap(): Promise<void> {
     const dtSec = Math.min(0.2, Math.max(0, (now - lastTs) / 1000));
     lastTs = now;
 
-    if (state.playing && !state.reducedMotion) {
+    const wState = resolveCurrentWeather();
+    if ((state.playing || wState.rainIntensity > 0.05) && !state.reducedMotion) {
       state.simTimeSec += dtSec;
-      resolvedFeed = resolveVehiclesForFrame(
-        currentSnapshot,
-        state.feedPreset,
-        state.simTimeSec,
-      );
-      mapViewer.updateState(state, resolvedFeed);
-      syncTransitBadges();
+      if (state.playing) {
+        resolvedFeed = resolveVehiclesForFrame(
+          currentSnapshot,
+          state.feedPreset,
+          state.simTimeSec,
+        );
+        resolvedTrains = resolveTrainsForFrame(
+          railBundle,
+          liveTrainsApi,
+          state.simTimeSec,
+          sessionStartDate,
+        );
+      }
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+      if (state.playing) {
+        syncTransitBadges();
+      }
 
       if (now - lastUiRefreshTs > 250) {
         lastUiRefreshTs = now;
-        if (state.selected?.kind === "vehicle" || state.selected?.kind === "portcall") {
+        if (
+          state.playing &&
+          (state.selected?.kind === "vehicle" ||
+            state.selected?.kind === "portcall" ||
+            state.selected?.kind === "train")
+        ) {
           const drift = mapViewer.measureMaxMarkerDriftCssPx();
-          renderCard(cardEl, state, resolvedFeed, drift, handlers);
+          renderCard(cardEl, state, resolvedFeed, drift, handlers, resolvedTrains);
         }
-        if (state.selected?.kind === "portcall") {
+        if (state.playing && (state.selected?.kind === "portcall" || state.selected?.kind === "train")) {
           const bounds = mapViewer.getViewportInfo();
-          labelLayer.render(labelLayerEl, bundle, state, bounds, handlers.onSelectPoi, resolvedFeed);
+          labelLayer.render(
+            labelLayerEl,
+            bundle,
+            state,
+            bounds,
+            handlers.onSelectPoi,
+            resolvedFeed,
+            resolvedTrains,
+          );
         }
-        renderStatus(statusEl, state, resolvedFeed);
+        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText);
       }
     }
 

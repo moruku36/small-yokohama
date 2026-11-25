@@ -12,6 +12,11 @@ import {
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
 import { pickFeatureIdAtImagePx, type LoadedReleaseBundle } from "../data/releaseLoader.js";
+import {
+  sampleVisibleAmbientCars,
+  type AmbientTrafficBundle,
+} from "../data/trafficFeed.js";
+import type { ResolvedTrain } from "../data/trainFeed.js";
 import type {
   AnimatedPortCall,
   ResolvedFeedState,
@@ -38,6 +43,7 @@ import {
 
 export interface MapViewerCallbacks {
   onSelectVehicle: (rv: ResolvedVehicle) => void;
+  onSelectTrain: (tr: ResolvedTrain) => void;
   onSelectLandmark: (lm: Landmark) => void;
   onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => void;
   onSelectPortCall: (pc: AnimatedPortCall) => void;
@@ -48,7 +54,7 @@ export interface MapViewerCallbacks {
 }
 
 const UI_CHROME_SELECTOR = "#bar, #drop, #card, #sq, #status, #minimap, #about-modal, #credit";
-const PIN_SELECTOR = ".map-label, .search-pin, .bus-pill, .boat-pill";
+const PIN_SELECTOR = ".map-label, .search-pin, .bus-pill, .boat-pill, .train-pill";
 
 export class MapViewer {
   private readonly osd: OpenSeadragon.Viewer;
@@ -58,18 +64,23 @@ export class MapViewer {
   private readonly inputRoot: HTMLElement;
   private readonly skyTintEl: HTMLElement | null;
   private readonly veilEl: HTMLElement | null;
-  private readonly skyFilterSvg: SVGSVGElement | null = null;
-  private readonly skyColorMatrix: SVGFEColorMatrixElement | null = null;
   private currentVariant: MapVariant;
   private feedState: ResolvedFeedState | null = null;
+  private trainsState: readonly ResolvedTrain[] = [];
+  private trafficBundle: AmbientTrafficBundle | null = null;
+  private weatherVisual: { rainIntensity: number; windSlope: number } = {
+    rainIntensity: 0,
+    windSlope: 0.08,
+  };
   private resizeObserver: ResizeObserver;
   private cleanupInput: () => void = () => {};
   private zoomStepFn: ((factor: number, pixel: OpenSeadragon.Point) => void) | null = null;
-  private currentRgb: [number, number, number] = [1, 1, 1];
-  private targetRgb: [number, number, number] = [1, 1, 1];
+  private currentSunAlt = 24;
+  private targetSunAlt = 24;
   private skyAnimRaf = 0;
   private skyAnimLastTs = 0;
   private lastFilterStr = "";
+  private lastScrimKey = "";
   private isDestroyed = false;
 
   constructor(
@@ -91,28 +102,6 @@ export class MapViewer {
       typeof window !== "undefined" &&
       ((window.matchMedia?.("(pointer: coarse)").matches ?? false) || window.innerWidth <= 700);
 
-    // SVG feColorMatrix filter for WebGL desktop map tinting (Small SF technique; avoids Chromium blend bugs)
-    if (!this.isMobile && typeof document !== "undefined") {
-      const ns = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(ns, "svg");
-      svg.setAttribute("width", "0");
-      svg.setAttribute("height", "0");
-      svg.setAttribute("aria-hidden", "true");
-      svg.style.position = "absolute";
-      svg.style.pointerEvents = "none";
-      const filter = document.createElementNS(ns, "filter");
-      filter.setAttribute("id", "sy-sky-tint");
-      filter.setAttribute("color-interpolation-filters", "sRGB");
-      const matrix = document.createElementNS(ns, "feColorMatrix");
-      matrix.setAttribute("type", "matrix");
-      matrix.setAttribute("values", "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0");
-      filter.appendChild(matrix);
-      svg.appendChild(filter);
-      document.body.appendChild(svg);
-      this.skyFilterSvg = svg;
-      this.skyColorMatrix = matrix;
-    }
-
     const dziUrl = `${bundle.baseReleaseUrl}/${bundle.release.variants[state.variant].dziPath}`;
     this.osd = OpenSeadragon({
       element: osdElement,
@@ -127,10 +116,10 @@ export class MapViewer {
       showNavigator: false,
       animationTime: state.reducedMotion ? 0 : 0.6,
       springStiffness: state.reducedMotion ? 100 : 9,
-      minZoomImageRatio: isFull ? 0.96 : 0.55,
-      maxZoomPixelRatio: isFull ? (this.isMobile ? 1.15 : 1.5) : 6,
-      visibilityRatio: isFull ? 0.92 : 0.65,
-      constrainDuringPan: false,
+      minZoomImageRatio: isFull ? 0.72 : 0.55,
+      maxZoomPixelRatio: isFull ? (this.isMobile ? 4.5 : 5.5) : 6,
+      visibilityRatio: isFull ? 0.85 : 0.65,
+      constrainDuringPan: isFull,
       gestureSettingsMouse: {
         dragToPan: false,
         clickToZoom: false,
@@ -187,6 +176,29 @@ export class MapViewer {
     this.renderOverlayFrame(true);
   }
 
+  setStreetlights(points: Float32Array | null): void {
+    this.glOverlay.setStreetlights(points);
+    this.renderOverlayFrame(false, false);
+  }
+
+  setPedestrians(points: Float32Array | null): void {
+    this.glOverlay.setPedestrians(points);
+    this.renderOverlayFrame(false, false);
+  }
+
+  setAmbientTraffic(bundle: AmbientTrafficBundle | null): void {
+    this.trafficBundle = bundle;
+    this.renderOverlayFrame(false, false);
+  }
+
+  setWeatherVisual(rainIntensity: number, windSlope: number): void {
+    const changed = Math.abs(this.weatherVisual.rainIntensity - rainIntensity) > 0.02;
+    this.weatherVisual = { rainIntensity, windSlope };
+    if (changed) {
+      this.renderOverlayFrame(false, true);
+    }
+  }
+
   private dismissVeil(): void {
     if (!this.veilEl || this.veilEl.hidden) return;
     this.veilEl.classList.add("gone");
@@ -197,68 +209,103 @@ export class MapViewer {
     }, 520);
   }
 
-  private computeCurrentSky(): { grade: SkyGrade } {
+  private computeCurrentSky(): { altitudeDeg: number; grade: SkyGrade } {
     const sunDate = getSunDateForHourJst(this.state.sunHourJst);
     const sun = computeYokohamaSun(sunDate);
-    return { grade: computeSkyGrade(sun.altitudeDeg) };
+    return { altitudeDeg: sun.altitudeDeg, grade: computeSkyGrade(sun.altitudeDeg) };
   }
 
-  private writeSkyFilterValues(rgb: readonly [number, number, number], grade: SkyGrade): void {
-    const isDay = rgb[0] > 0.992 && rgb[1] > 0.992 && rgb[2] > 0.992;
+  private writeSkyFilterValues(grade: SkyGrade): void {
+    const rainAmt =
+      this.weatherVisual.rainIntensity > 0.05 && grade.nightLights < 0.35
+        ? Math.min(1, this.weatherVisual.rainIntensity)
+        : 0;
+    const filterStr =
+      rainAmt > 0.02
+        ? `${grade.cssFilter ? `${grade.cssFilter} ` : ""}brightness(${(1 - 0.14 * rainAmt).toFixed(3)}) saturate(${(1 - 0.16 * rainAmt).toFixed(3)})`.trim()
+        : grade.cssFilter;
 
-    if (!this.isMobile && this.skyColorMatrix) {
-      const r = rgb[0].toFixed(3);
-      const g = rgb[1].toFixed(3);
-      const b = rgb[2].toFixed(3);
-      this.skyColorMatrix.setAttribute(
-        "values",
-        `${r} 0 0 0 0  0 ${g} 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`,
-      );
-      const nextFilter = isDay ? "" : "url(#sy-sky-tint)";
-      if (this.lastFilterStr !== nextFilter) {
-        this.lastFilterStr = nextFilter;
-        this.osdElement.style.filter = nextFilter;
-      }
-      if (this.skyTintEl) {
-        this.skyTintEl.style.opacity = "0";
-      }
-      return;
+    if (this.lastFilterStr !== filterStr) {
+      this.lastFilterStr = filterStr;
+      this.osdElement.style.filter = filterStr;
     }
 
-    // Mobile 2D Canvas fallback: reliable across iOS Safari & Android Chrome
-    const strength = Math.max(
-      0,
-      Math.min(0.95, 1 - Math.min(rgb[0], rgb[1], rgb[2])),
-    );
-    const nightAmt = grade.nightLights;
-    const nextFilter = isDay
-      ? ""
-      : `brightness(${(1 - nightAmt * 0.1).toFixed(3)}) contrast(${(1 + nightAmt * 0.08).toFixed(3)}) saturate(${(1 - nightAmt * 0.12).toFixed(3)})`;
-    if (this.lastFilterStr !== nextFilter) {
-      this.lastFilterStr = nextFilter;
-      this.osdElement.style.filter = nextFilter;
-    }
+    const bgRgb = this.resolveCloudBaseWithRain(grade);
+    const bgCss = `rgb(${Math.round(bgRgb[0] * 255)}, ${Math.round(bgRgb[1] * 255)}, ${Math.round(bgRgb[2] * 255)})`;
+    this.inputRoot.style.background = bgCss;
+    document.documentElement.style.setProperty("--bg", bgCss);
+
     if (this.skyTintEl) {
-      if (isDay) {
-        this.skyTintEl.style.opacity = "0";
-      } else {
-        const [mr, mg, mb] = grade.multiplyCssRgb;
-        this.skyTintEl.style.background = `rgb(${mr}, ${mg}, ${mb})`;
-        this.skyTintEl.style.opacity = Math.max(strength, grade.multiplyOpacity).toFixed(3);
+      const [sr, sg, sb, sa] = grade.scrimRgba;
+      const effA = rainAmt > 0.02 ? Math.max(sa, 0.12 * rainAmt) : sa;
+      const effR = rainAmt > 0.02 && sa < 0.1 ? 66 : sr;
+      const effG = rainAmt > 0.02 && sa < 0.1 ? 84 : sg;
+      const effB = rainAmt > 0.02 && sa < 0.1 ? 108 : sb;
+      const scrimKey = effA < 0.005 ? "0" : `${effR},${effG},${effB},${effA.toFixed(3)}`;
+      if (this.lastScrimKey !== scrimKey) {
+        this.lastScrimKey = scrimKey;
+        if (effA < 0.005) {
+          this.skyTintEl.style.opacity = "0";
+        } else {
+          this.skyTintEl.style.background = `rgb(${effR}, ${effG}, ${effB})`;
+          this.skyTintEl.style.opacity = effA.toFixed(3);
+        }
       }
     }
   }
 
-  private applySkyFilter(grade: SkyGrade, immediate: boolean): void {
-    this.targetRgb = [...grade.matrixRgb];
+  private resolveCloudBaseWithRain(grade: SkyGrade): [number, number, number] {
+    const r =
+      this.weatherVisual.rainIntensity > 0.05 && grade.nightLights < 0.45
+        ? Math.min(0.65, this.weatherVisual.rainIntensity * 0.55)
+        : 0;
+    const overcast: readonly [number, number, number] = [0.62, 0.67, 0.74];
+    const mixChan = (v255: number, tVal: number) => (v255 / 255) * (1 - r) + tVal * r;
+    return [
+      mixChan(grade.cloudBaseRgb[0], overcast[0]),
+      mixChan(grade.cloudBaseRgb[1], overcast[1]),
+      mixChan(grade.cloudBaseRgb[2], overcast[2]),
+    ];
+  }
+
+  private resolveCloudShadowWithRain(grade: SkyGrade): [number, number, number] {
+    const r =
+      this.weatherVisual.rainIntensity > 0.05 && grade.nightLights < 0.45
+        ? Math.min(0.65, this.weatherVisual.rainIntensity * 0.55)
+        : 0;
+    const overcast: readonly [number, number, number] = [0.46, 0.52, 0.61];
+    const mixChan = (v255: number, tVal: number) => (v255 / 255) * (1 - r) + tVal * r;
+    return [
+      mixChan(grade.cloudShadowRgb[0], overcast[0]),
+      mixChan(grade.cloudShadowRgb[1], overcast[1]),
+      mixChan(grade.cloudShadowRgb[2], overcast[2]),
+    ];
+  }
+
+  private resolveCloudHighlightWithRain(grade: SkyGrade): [number, number, number] {
+    const r =
+      this.weatherVisual.rainIntensity > 0.05 && grade.nightLights < 0.45
+        ? Math.min(0.65, this.weatherVisual.rainIntensity * 0.55)
+        : 0;
+    const overcast: readonly [number, number, number] = [0.76, 0.80, 0.85];
+    const mixChan = (v255: number, tVal: number) => (v255 / 255) * (1 - r) + tVal * r;
+    return [
+      mixChan(grade.cloudHighlightRgb[0], overcast[0]),
+      mixChan(grade.cloudHighlightRgb[1], overcast[1]),
+      mixChan(grade.cloudHighlightRgb[2], overcast[2]),
+    ];
+  }
+
+  private applySkyFilter(targetAltDeg: number, grade: SkyGrade, immediate: boolean): void {
+    this.targetSunAlt = targetAltDeg;
 
     if (immediate || this.state.reducedMotion) {
       if (this.skyAnimRaf) {
         window.cancelAnimationFrame(this.skyAnimRaf);
         this.skyAnimRaf = 0;
       }
-      this.currentRgb = [...this.targetRgb];
-      this.writeSkyFilterValues(this.currentRgb, grade);
+      this.currentSunAlt = targetAltDeg;
+      this.writeSkyFilterValues(grade);
       return;
     }
 
@@ -269,24 +316,15 @@ export class MapViewer {
         if (this.isDestroyed) return;
         const dt = Math.min(0.05, (ts - (this.skyAnimLastTs || ts)) / 1000);
         this.skyAnimLastTs = ts;
-        const alpha = 1 - Math.exp(-dt / 0.12);
-        this.currentRgb = [
-          this.currentRgb[0] + (this.targetRgb[0] - this.currentRgb[0]) * alpha,
-          this.currentRgb[1] + (this.targetRgb[1] - this.currentRgb[1]) * alpha,
-          this.currentRgb[2] + (this.targetRgb[2] - this.currentRgb[2]) * alpha,
-        ];
-        const { grade: liveGrade } = this.computeCurrentSky();
-        this.writeSkyFilterValues(this.currentRgb, liveGrade);
+        const alpha = 1 - Math.exp(-dt / 0.14);
+        this.currentSunAlt += (this.targetSunAlt - this.currentSunAlt) * alpha;
+        this.writeSkyFilterValues(computeSkyGrade(this.currentSunAlt));
 
-        const diff =
-          Math.abs(this.targetRgb[0] - this.currentRgb[0]) +
-          Math.abs(this.targetRgb[1] - this.currentRgb[1]) +
-          Math.abs(this.targetRgb[2] - this.currentRgb[2]);
-        if (diff > 0.004) {
+        if (Math.abs(this.targetSunAlt - this.currentSunAlt) > 0.06) {
           this.skyAnimRaf = window.requestAnimationFrame(step);
         } else {
-          this.currentRgb = [...this.targetRgb];
-          this.writeSkyFilterValues(this.currentRgb, liveGrade);
+          this.currentSunAlt = this.targetSunAlt;
+          this.writeSkyFilterValues(computeSkyGrade(this.targetSunAlt));
         }
       };
       this.skyAnimRaf = window.requestAnimationFrame(step);
@@ -311,10 +349,14 @@ export class MapViewer {
       wheelSettleTimer: 0,
     };
 
+    const isFull = isFullYokohamaCamera(this.camera);
     const panPx = (dx: number, dy: number) => {
       const vp = this.osd.viewport;
       if (!vp) return;
       vp.panBy(vp.deltaPointsFromPixels(new OpenSeadragon.Point(dx, dy)), true);
+      if (isFull) {
+        vp.applyConstraints(true);
+      }
     };
 
     const clampZoom = (z: number): number => {
@@ -374,11 +416,12 @@ export class MapViewer {
         const z = vp.getZoom(true);
         const nz = z * Math.pow(cam.zoomTo / z, 1 - Math.exp(-dt / 0.085));
         vp.zoomTo(nz, cam.zoomAt ?? undefined, true);
+        if (isFull) vp.applyConstraints(true);
         if (Math.abs(Math.log(cam.zoomTo / Math.max(1e-6, nz))) < 0.002) {
           vp.zoomTo(cam.zoomTo, cam.zoomAt ?? undefined, true);
           cam.zoomTo = null;
           cam.zoomAt = null;
-          vp.applyConstraints(this.state.reducedMotion);
+          vp.applyConstraints(isFull || this.state.reducedMotion);
         } else {
           busy = true;
         }
@@ -546,6 +589,9 @@ export class MapViewer {
           vp.getMaxZoom(),
         );
         vp.zoomTo(nextZoom, refPt, true);
+        if (isFull) {
+          vp.applyConstraints(true);
+        }
 
         lastPinchDist = dist;
         lastPinchMidX = midX;
@@ -743,13 +789,16 @@ export class MapViewer {
       if (cam.wheelZFactor !== 1 && cam.wheelAt) {
         const nextZoom = clampZoom(vp.getZoom(true) * cam.wheelZFactor);
         vp.zoomTo(nextZoom, vp.pointFromPixel(cam.wheelAt, true), true);
+        if (isFull) {
+          vp.applyConstraints(true);
+        }
       }
       cam.wheelDx = 0;
       cam.wheelDy = 0;
       cam.wheelZFactor = 1;
       window.clearTimeout(cam.wheelSettleTimer);
       cam.wheelSettleTimer = window.setTimeout(() => {
-        this.osd.viewport?.applyConstraints(this.state.reducedMotion);
+        this.osd.viewport?.applyConstraints(isFull || this.state.reducedMotion);
       }, 180);
     };
 
@@ -829,18 +878,23 @@ export class MapViewer {
       } else if (z > maxZoom) {
         vp.zoomTo(maxZoom, undefined, true);
       }
+      if (isFullYokohamaCamera(this.camera)) {
+        vp.applyConstraints(true);
+      }
     }
   }
 
   updateState(
     nextState: ViewerState,
     feedState: ResolvedFeedState | null,
+    trainsState: readonly ResolvedTrain[] = this.trainsState,
     forceSkyRefresh = false,
   ): void {
     const prevSun = this.state.sunHourJst;
     const prevTheme = this.state.theme;
     this.state = nextState;
     this.feedState = feedState;
+    this.trainsState = trainsState;
 
     if (nextState.variant !== this.currentVariant) {
       this.currentVariant = nextState.variant;
@@ -945,6 +999,9 @@ export class MapViewer {
     const vpPoint = this.osd.viewport.imageToViewportCoordinates(view.centerImgX, view.centerImgY);
     this.osd.viewport.panTo(vpPoint, immediately);
     this.osd.viewport.zoomTo(view.zoom, undefined, immediately);
+    if (immediately && isFullYokohamaCamera(this.camera)) {
+      this.osd.viewport.applyConstraints(true);
+    }
   }
 
   private syncCameraViewState(): void {
@@ -1005,9 +1062,9 @@ export class MapViewer {
 
   renderOverlayFrame(immediateSky = false, updateSky = true): void {
     if (this.isDestroyed) return;
-    const { grade } = this.computeCurrentSky();
+    const { altitudeDeg, grade } = this.computeCurrentSky();
     if (updateSky || immediateSky) {
-      this.applySkyFilter(grade, immediateSky);
+      this.applySkyFilter(altitudeDeg, grade, immediateSky);
     }
 
     const bounds = this.getViewportImageBounds();
@@ -1015,8 +1072,39 @@ export class MapViewer {
 
     const selectedVehicleId =
       this.state.selected?.kind === "vehicle" ? this.state.selected.vehicle.entityId : null;
+    const selectedTrainId =
+      this.state.selected?.kind === "train" ? this.state.selected.train.id : null;
     const selectedPortCallId =
       this.state.selected?.kind === "portcall" ? this.state.selected.portCall.id : null;
+
+    const imgPxPerCssPx =
+      (bounds.bottomRight.x - bounds.topLeft.x) / Math.max(1, bounds.cssWidth);
+    const carAlpha = this.state.showTraffic
+      ? Math.min(1, Math.max(0, (4.8 - imgPxPerCssPx) / 2.2))
+      : 0;
+    const pedAlpha = this.state.showPedestrians
+      ? Math.min(1, Math.max(0, (3.6 - imgPxPerCssPx) / 1.8))
+      : 0;
+    const hourJst =
+      this.state.sunHourJst !== null
+        ? this.state.sunHourJst
+        : (() => {
+            const d = getSunDateForHourJst(null);
+            const jst = new Date(d.getTime() + 9 * 3600_000);
+            return jst.getUTCHours() + jst.getUTCMinutes() / 60;
+          })();
+    const ambientCars =
+      carAlpha > 0.01 && this.trafficBundle
+        ? sampleVisibleAmbientCars(
+            this.trafficBundle,
+            bounds.topLeft,
+            bounds.bottomRight,
+            this.state.simTimeSec,
+            this.camera,
+            420,
+            hourJst,
+          )
+        : [];
 
     this.glOverlay.render({
       viewTopLeftImgPx: bounds.topLeft,
@@ -1024,6 +1112,10 @@ export class MapViewer {
       viewportCssWidth: bounds.cssWidth,
       viewportCssHeight: bounds.cssHeight,
       glowTintRgba: grade.glowRgba,
+      skyTintRgb: grade.matrixRgb,
+      cloudShadowRgb: this.resolveCloudShadowWithRain(grade),
+      cloudBaseRgb: this.resolveCloudBaseWithRain(grade),
+      cloudHighlightRgb: this.resolveCloudHighlightWithRain(grade),
       nightIntensity: grade.nightLights,
       vehicleBrightness: grade.vehicleBrightness,
       simTimeSec: this.state.simTimeSec,
@@ -1033,7 +1125,15 @@ export class MapViewer {
       showGcps: this.state.showGcps,
       showDeckTestPoint: this.state.showDeckTestPoint,
       vehicles: this.state.showBuses ? (this.feedState?.vehicles ?? []) : [],
+      trains: this.state.showTrains ? this.trainsState : [],
+      ambientCars,
+      carAlpha,
+      pedAlpha,
+      rainIntensity: this.weatherVisual.rainIntensity,
+      windSlope: this.weatherVisual.windSlope,
+      reducedMotion: this.state.reducedMotion,
       selectedVehicleId,
+      selectedTrainId,
       selectedPortCallId,
       gcps: this.bundle.gcps,
       deckTestPoint: this.bundle.deckTestPoint,
@@ -1058,6 +1158,25 @@ export class MapViewer {
         if (Math.hypot(viewerPos.x - vScreen.x, viewerPos.y - vScreen.y) <= 28) {
           this.callbacks.onSelectVehicle(rv);
           return;
+        }
+      }
+    }
+
+    // 1b. Check railway trains (hit test across every car in consist)
+    if (this.state.showTrains && this.trainsState.length > 0) {
+      for (const tr of this.trainsState) {
+        for (const car of tr.cars) {
+          const cImg = localToImage(
+            this.camera,
+            wgs84ToLocal(this.camera, car.lon, car.lat, car.elevM + tr.carHeightM * 0.5),
+          );
+          const cScreen = this.osd.viewport.imageToViewerElementCoordinates(
+            new OpenSeadragon.Point(cImg.px, cImg.py),
+          );
+          if (Math.hypot(viewerPos.x - cScreen.x, viewerPos.y - cScreen.y) <= 24) {
+            this.callbacks.onSelectTrain(tr);
+            return;
+          }
         }
       }
     }
@@ -1121,7 +1240,6 @@ export class MapViewer {
     if (this.skyAnimRaf) window.cancelAnimationFrame(this.skyAnimRaf);
     this.cleanupInput();
     this.resizeObserver.disconnect();
-    this.skyFilterSvg?.remove();
     this.osd.destroy();
   }
 }

@@ -6,7 +6,9 @@ import {
   type SceneFeatureRecord,
   type VehicleRecord,
 } from "@small-yokohama/core";
+import type { ResolvedTrain } from "./data/trainFeed.js";
 import type { AnimatedPortCall } from "./data/vehicleFeed.js";
+import type { WeatherMode } from "./data/weatherFeed.js";
 import type { Lang } from "./i18n.js";
 import {
   RED_BRICK_CENTER_IMG,
@@ -32,6 +34,7 @@ export type FeedPreset =
 
 export type SelectedEntity =
   | { kind: "vehicle"; vehicle: VehicleRecord; ageSec: number | null; status: string }
+  | { kind: "train"; train: ResolvedTrain }
   | { kind: "landmark"; landmark: Landmark }
   | { kind: "poi"; poi: PoiRecord }
   | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number }
@@ -47,8 +50,12 @@ export interface ViewerState {
   playing: boolean;
   simTimeSec: number;
   sunHourJst: number | null;
+  weatherMode: WeatherMode;
+  showTrains: boolean;
   showBuses: boolean;
   showBoats: boolean;
+  showTraffic: boolean;
+  showPedestrians: boolean;
   showLabels: boolean;
   showDepthMap: boolean;
   xrayOcclusion: boolean;
@@ -115,7 +122,7 @@ export function createInitialViewerState(
   const defaultCenterX = isFullMap ? RED_BRICK_CENTER_IMG.x : camera.imageWidthPx * 0.66;
   const defaultCenterY = isFullMap ? RED_BRICK_CENTER_IMG.y : camera.imageHeightPx * 0.59;
   const minZoom = isFullMap ? 0.35 : 0.6;
-  const maxZoom = isFullMap ? 64 : 16;
+  const maxZoom = isFullMap ? 96 : 16;
 
   const centerImgX = params.has("x")
     ? clampNumber(rawX, 0, camera.imageWidthPx)
@@ -140,6 +147,10 @@ export function createInitialViewerState(
     sunHourJst = null;
   }
 
+  const wParam = params.get("weather");
+  const weatherMode: WeatherMode =
+    wParam === "rain" || wParam === "clear" ? wParam : "live";
+
   const theme: UiTheme =
     explicitTheme ??
     (isNightAltitude(computeYokohamaSun(getSunDateForHourJst(sunHourJst, now)).altitudeDeg)
@@ -155,8 +166,12 @@ export function createInitialViewerState(
     playing: !prefersReducedMotion,
     simTimeSec: 0,
     sunHourJst,
+    weatherMode,
+    showTrains: params.get("trains") !== "0",
     showBuses: params.get("buses") !== "0",
     showBoats: params.get("boats") !== "0",
+    showTraffic: params.get("cars") !== "0",
+    showPedestrians: params.get("people") !== "0",
     showLabels: params.get("labels") !== "0",
     showDepthMap: params.get("depth") === "1",
     xrayOcclusion: params.get("xray") === "1",
@@ -188,8 +203,12 @@ export function serializeShareUrl(state: ViewerState, baseHref: string): string 
   p.set("y", state.cameraView.centerImgY.toFixed(1));
   p.set("z", state.cameraView.zoom.toFixed(2));
   p.set("sun", state.sunHourJst === null ? "live" : state.sunHourJst.toFixed(2));
+  if (state.weatherMode !== "live") p.set("weather", state.weatherMode);
+  if (!state.showTrains) p.set("trains", "0");
   if (!state.showBuses) p.set("buses", "0");
   if (!state.showBoats) p.set("boats", "0");
+  if (!state.showTraffic) p.set("cars", "0");
+  if (!state.showPedestrians) p.set("people", "0");
   if (!state.showLabels) p.set("labels", "0");
   if (state.showDepthMap) p.set("depth", "1");
   if (state.xrayOcclusion) p.set("xray", "1");

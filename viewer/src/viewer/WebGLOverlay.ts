@@ -1,21 +1,32 @@
 import {
-  localToImage,
   wgs84ToLocal,
+  localToImage,
   type CameraManifest,
   type GroundControlPoint,
   type VehicleRecord,
 } from "@small-yokohama/core";
 import type { LoadedTilePixels } from "../data/releaseLoader.js";
+import type { AmbientCarInstance } from "../data/trafficFeed.js";
+import type { RailLineId, ResolvedTrain } from "../data/trainFeed.js";
 import type {
   AnimatedPortCall,
   ResolvedVehicle,
   VesselKind,
 } from "../data/vehicleFeed.js";
 import {
+  CARLIGHT_FRAG,
+  CARLIGHT_VERT,
+  CLOUD_FRAG,
   FULLSCREEN_VERT,
   MARKER_FRAG,
   MARKER_VERT,
   OVERLAY_FRAG,
+  PEDESTRIAN_FRAG,
+  PEDESTRIAN_VERT,
+  RAIN_FRAG,
+  RAIN_VERT,
+  STREETLAMP_FRAG,
+  STREETLAMP_VERT,
   VEHICLE_FRAG,
   VEHICLE_VERT,
 } from "./shaders.js";
@@ -184,7 +195,6 @@ function buildRetroBusMesh(): MeshData {
   const wheelDark = [0.12, 0.13, 0.15] as const;
   const headlight = [1.0, 0.92, 0.68] as const;
 
-  // Classic Akai Kutsu two-tone short sightseeing body (9.5m)
   pushBoxMesh(verts, 0, 0, 0.32, 1.55, 2.3, 9.4, crimson, crimson);
   pushBoxMesh(verts, 0, -0.1, 1.55, 2.88, 2.26, 9.0, creamUpper, creamUpper);
   pushBoxMesh(verts, 0, -0.1, 1.68, 2.52, 2.3, 8.2, windowTint, creamUpper);
@@ -218,6 +228,36 @@ function buildSingleDeckBusMesh(
   return finalizeMesh(verts);
 }
 
+/** Unit-scaled 3D railcar mesh (scaled dynamically by carWidthM, carLengthM, carHeightM). */
+function buildRailcarMesh(
+  bodyRgb: readonly [number, number, number],
+  stripeRgb: readonly [number, number, number],
+  roofRgb: readonly [number, number, number],
+): MeshData {
+  const verts: number[] = [];
+  const bogieDark = [0.15, 0.16, 0.19] as const;
+  const windowLit = [0.96, 0.89, 0.66] as const;
+  const acPod = [0.78, 0.81, 0.86] as const;
+  const headlight = [1.0, 0.97, 0.78] as const;
+
+  // Bogies / chassis
+  pushBoxMesh(verts, 0, 0.3, 0.0, 0.16, 0.82, 0.24, bogieDark, bogieDark);
+  pushBoxMesh(verts, 0, -0.3, 0.0, 0.16, 0.82, 0.24, bogieDark, bogieDark);
+  // Main lower carbody
+  pushBoxMesh(verts, 0, 0, 0.14, 0.90, 0.98, 0.98, bodyRgb, roofRgb);
+  // Line color livery band
+  pushBoxMesh(verts, 0, 0, 0.34, 0.50, 1.01, 0.96, stripeRgb, stripeRgb);
+  // Warm illuminated passenger windows
+  pushBoxMesh(verts, 0, 0, 0.54, 0.76, 1.01, 0.88, windowLit, roofRgb);
+  // Roof & twin AC units
+  pushBoxMesh(verts, 0, 0.22, 0.90, 1.0, 0.56, 0.22, acPod, acPod);
+  pushBoxMesh(verts, 0, -0.22, 0.90, 1.0, 0.56, 0.22, acPod, acPod);
+  // Front & rear marker/headlight lamps
+  pushBoxMesh(verts, 0, 0.50, 0.22, 0.34, 0.76, 0.03, headlight, headlight);
+
+  return finalizeMesh(verts);
+}
+
 function buildCruiseShipMesh(): MeshData {
   const verts: number[] = [];
   const navyHull = [0.11, 0.23, 0.39] as const;
@@ -226,14 +266,12 @@ function buildCruiseShipMesh(): MeshData {
   const glass = [0.14, 0.24, 0.36] as const;
   const coralFunnel = [0.85, 0.27, 0.22] as const;
 
-  // Waterline + main fuselage + sharp tapered bow (unit scale: width=1, length=1, height=1)
   pushHullTapering(verts, -0.46, 0.22, 0.02, 0.16, 0.48, 0.48, navyHull, whiteHull);
   pushHullTapering(verts, 0.22, 0.5, 0.02, 0.16, 0.48, 0.06, navyHull, whiteHull);
 
   pushHullTapering(verts, -0.45, 0.2, 0.16, 0.34, 0.49, 0.49, whiteHull, deckWood);
   pushHullTapering(verts, 0.2, 0.48, 0.16, 0.34, 0.49, 0.05, whiteHull, whiteHull);
 
-  // Terraced passenger superstructure decks
   pushBoxMesh(verts, 0, -0.08, 0.34, 0.54, 0.84, 0.62, whiteHull, whiteHull);
   pushBoxMesh(verts, 0, -0.07, 0.4, 0.48, 0.86, 0.56, glass, whiteHull);
   pushBoxMesh(verts, 0, -0.09, 0.54, 0.72, 0.72, 0.52, whiteHull, deckWood);
@@ -268,7 +306,6 @@ function buildWaterbusMesh(): MeshData {
   const glass = [0.14, 0.25, 0.38] as const;
   const roofSilver = [0.86, 0.9, 0.94] as const;
 
-  // Twin-hull Sea Bass profile
   pushHullTapering(verts, -0.45, 0.22, 0.02, 0.32, 0.48, 0.48, seaBlue, whiteHull);
   pushHullTapering(verts, 0.22, 0.5, 0.02, 0.32, 0.48, 0.14, whiteHull, whiteHull);
   pushHullTapering(verts, -0.32, 0.18, 0.32, 0.78, 0.82, 0.76, whiteHull, roofSilver);
@@ -299,7 +336,6 @@ function buildWakeMesh(): MeshData {
   const verts: number[] = [];
   const foam = [0.94, 0.97, 1.0] as const;
   const n = [0, 0, 1] as const;
-  // Twin V-ribbons trailing behind stern (y = -0.42 down to -2.1) at gentle water clearance z = 0.04
   pushQuad(
     verts,
     [-0.18, -0.4, 0.04],
@@ -330,6 +366,100 @@ function buildWakeMesh(): MeshData {
   return finalizeMesh(verts);
 }
 
+function buildSedanMesh(bodyRgb: readonly [number, number, number]): MeshData {
+  const verts: number[] = [];
+  const glass = [0.14, 0.19, 0.26] as const;
+  const wheelDark = [0.11, 0.12, 0.14] as const;
+  const head = [1.0, 0.96, 0.78] as const;
+  const tail = [0.92, 0.22, 0.18] as const;
+
+  pushBoxMesh(verts, 0, 0, 0.24, 0.88, 1.78, 4.35, bodyRgb, bodyRgb);
+  pushBoxMesh(verts, 0, -0.15, 0.88, 1.42, 1.56, 2.25, glass, bodyRgb);
+  pushBoxMesh(verts, 0, 1.35, 0.0, 0.30, 1.72, 0.72, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, -1.35, 0.0, 0.30, 1.72, 0.72, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, 2.20, 0.44, 0.64, 1.42, 0.08, head, head);
+  pushBoxMesh(verts, 0, -2.20, 0.44, 0.64, 1.42, 0.08, tail, tail);
+  return finalizeMesh(verts);
+}
+
+function buildTaxiMesh(): MeshData {
+  const verts: number[] = [];
+  const taxiYellow = [0.95, 0.78, 0.22] as const;
+  const roofCap = [0.99, 0.97, 0.88] as const;
+  const glass = [0.13, 0.18, 0.25] as const;
+  const wheelDark = [0.11, 0.12, 0.14] as const;
+  const head = [1.0, 0.96, 0.78] as const;
+  const tail = [0.94, 0.22, 0.18] as const;
+
+  pushBoxMesh(verts, 0, 0, 0.24, 0.88, 1.78, 4.45, taxiYellow, taxiYellow);
+  pushBoxMesh(verts, 0, -0.15, 0.88, 1.42, 1.56, 2.25, glass, taxiYellow);
+  pushBoxMesh(verts, 0, 0.0, 1.42, 1.62, 0.56, 0.42, roofCap, roofCap);
+  pushBoxMesh(verts, 0, 1.35, 0.0, 0.30, 1.72, 0.72, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, -1.35, 0.0, 0.30, 1.72, 0.72, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, 2.24, 0.44, 0.64, 1.42, 0.08, head, head);
+  pushBoxMesh(verts, 0, -2.24, 0.44, 0.64, 1.42, 0.08, tail, tail);
+  return finalizeMesh(verts);
+}
+
+function buildVanMesh(): MeshData {
+  const verts: number[] = [];
+  const vanWhite = [0.94, 0.95, 0.96] as const;
+  const vanRoof = [0.97, 0.98, 0.99] as const;
+  const glass = [0.13, 0.18, 0.24] as const;
+  const wheelDark = [0.11, 0.12, 0.14] as const;
+  const head = [1.0, 0.96, 0.78] as const;
+  const tail = [0.92, 0.22, 0.18] as const;
+
+  pushBoxMesh(verts, 0, 0, 0.28, 1.15, 1.88, 4.75, vanWhite, vanRoof);
+  pushBoxMesh(verts, 0, 0.15, 1.15, 1.98, 1.82, 4.25, glass, vanRoof);
+  pushBoxMesh(verts, 0, 1.55, 0.0, 0.34, 1.80, 0.76, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, -1.55, 0.0, 0.34, 1.80, 0.76, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, 2.40, 0.50, 0.72, 1.50, 0.08, head, head);
+  pushBoxMesh(verts, 0, -2.40, 0.50, 0.72, 1.50, 0.08, tail, tail);
+  return finalizeMesh(verts);
+}
+
+function buildBoxTruckMesh(): MeshData {
+  const verts: number[] = [];
+  const cabWhite = [0.90, 0.91, 0.93] as const;
+  const boxWhite = [0.95, 0.95, 0.94] as const;
+  const boxRoof = [0.98, 0.98, 0.97] as const;
+  const glass = [0.13, 0.18, 0.25] as const;
+  const wheelDark = [0.11, 0.12, 0.14] as const;
+  const head = [1.0, 0.96, 0.78] as const;
+  const tail = [0.92, 0.22, 0.18] as const;
+
+  // Cab forward, crisp cargo box behind
+  pushBoxMesh(verts, 0, 1.95, 0.32, 1.55, 2.02, 1.75, cabWhite, cabWhite);
+  pushBoxMesh(verts, 0, 2.10, 1.55, 2.28, 1.92, 1.40, glass, cabWhite);
+  pushBoxMesh(verts, 0, -0.90, 0.42, 2.75, 2.14, 3.85, boxWhite, boxRoof);
+  pushBoxMesh(verts, 0, 1.95, 0.0, 0.36, 1.92, 0.80, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, -1.65, 0.0, 0.36, 1.98, 0.85, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, 2.84, 0.55, 0.78, 1.62, 0.08, head, head);
+  pushBoxMesh(verts, 0, -2.84, 0.55, 0.78, 1.72, 0.08, tail, tail);
+  return finalizeMesh(verts);
+}
+
+function buildPodCarMesh(): MeshData {
+  const verts: number[] = [];
+  const crispWhite = [0.96, 0.97, 0.98] as const;
+  const podDark = [0.18, 0.20, 0.24] as const;
+  const glass = [0.13, 0.18, 0.25] as const;
+  const wheelDark = [0.11, 0.12, 0.14] as const;
+  const head = [1.0, 0.96, 0.78] as const;
+  const tail = [0.94, 0.22, 0.18] as const;
+
+  pushBoxMesh(verts, 0, 0, 0.24, 0.90, 1.82, 4.45, crispWhite, crispWhite);
+  pushBoxMesh(verts, 0, -0.14, 0.90, 1.44, 1.60, 2.30, glass, crispWhite);
+  // Roof lidar sensor pod matching Small SF's iconic autonomous sedans
+  pushBoxMesh(verts, 0, 0.05, 1.44, 1.70, 0.52, 0.52, podDark, podDark);
+  pushBoxMesh(verts, 0, 1.35, 0.0, 0.30, 1.74, 0.72, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, -1.35, 0.0, 0.30, 1.74, 0.72, wheelDark, wheelDark);
+  pushBoxMesh(verts, 0, 2.24, 0.44, 0.64, 1.44, 0.08, head, head);
+  pushBoxMesh(verts, 0, -2.24, 0.44, 0.64, 1.44, 0.08, tail, tail);
+  return finalizeMesh(verts);
+}
+
 function createStaticMeshVao(
   gl: WebGL2RenderingContext,
   mesh: MeshData,
@@ -357,6 +487,10 @@ export interface OverlayRenderOptions {
   viewportCssWidth: number;
   viewportCssHeight: number;
   glowTintRgba: readonly [number, number, number, number];
+  skyTintRgb: readonly [number, number, number];
+  cloudShadowRgb: readonly [number, number, number];
+  cloudBaseRgb: readonly [number, number, number];
+  cloudHighlightRgb: readonly [number, number, number];
   nightIntensity: number;
   vehicleBrightness: number;
   simTimeSec: number;
@@ -366,7 +500,15 @@ export interface OverlayRenderOptions {
   showGcps: boolean;
   showDeckTestPoint: boolean;
   vehicles: readonly ResolvedVehicle[];
+  trains: readonly ResolvedTrain[];
+  ambientCars: readonly AmbientCarInstance[];
+  carAlpha: number;
+  pedAlpha: number;
+  rainIntensity: number;
+  windSlope: number;
+  reducedMotion: boolean;
   selectedVehicleId: string | null;
+  selectedTrainId: string | null;
   selectedPortCallId: string | null;
   gcps: readonly GroundControlPoint[];
   deckTestPoint: { lon: number; lat: number; elevationM: number };
@@ -376,16 +518,39 @@ export interface OverlayRenderOptions {
 export class WebGLOverlay {
   private readonly gl: WebGL2RenderingContext;
   private readonly overlayProg: WebGLProgram;
+  private readonly pedProg: WebGLProgram;
+  private readonly lampProg: WebGLProgram;
+  private readonly carLightProg: WebGLProgram;
   private readonly vehicleProg: WebGLProgram;
+  private readonly cloudProg: WebGLProgram;
   private readonly markerProg: WebGLProgram;
+  private readonly rainProg: WebGLProgram;
   private readonly depthArrayTex: WebGLTexture;
   private readonly emptyVao: WebGLVertexArrayObject;
+  private readonly pedVao: WebGLVertexArrayObject;
+  private readonly pedInstanceBuf: WebGLBuffer;
+  private pedCount = 0;
+  private readonly lampVao: WebGLVertexArrayObject;
+  private readonly lampInstanceBuf: WebGLBuffer;
+  private lampCount = 0;
+  private readonly carLightVao: WebGLVertexArrayObject;
+  private readonly carLightInstanceBuf: WebGLBuffer;
+  private readonly rainVao: WebGLVertexArrayObject;
   private readonly busMeshes: {
     articulated: { vao: WebGLVertexArrayObject; count: number };
     retro: { vao: WebGLVertexArrayObject; count: number };
     pierLine: { vao: WebGLVertexArrayObject; count: number };
     cityBus: { vao: WebGLVertexArrayObject; count: number };
   };
+  private readonly sedanMeshes: ReadonlyArray<{ vao: WebGLVertexArrayObject; count: number }>;
+  private readonly taxiMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly vanMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly truckMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly podCarMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly railMeshes: Record<
+    RailLineId,
+    { vao: WebGLVertexArrayObject; count: number }
+  >;
   private readonly boatMeshes: Record<
     VesselKind,
     { vao: WebGLVertexArrayObject; count: number }
@@ -404,7 +569,7 @@ export class WebGLOverlay {
       alpha: true,
       depth: true,
       antialias: true,
-      premultipliedAlpha: false,
+      premultipliedAlpha: true,
     });
     if (!gl) {
       throw new Error("WebGL2 is required for depth-occluded vehicle rendering");
@@ -412,8 +577,13 @@ export class WebGLOverlay {
     this.gl = gl;
 
     this.overlayProg = linkProgram(gl, FULLSCREEN_VERT, OVERLAY_FRAG);
+    this.pedProg = linkProgram(gl, PEDESTRIAN_VERT, PEDESTRIAN_FRAG);
+    this.lampProg = linkProgram(gl, STREETLAMP_VERT, STREETLAMP_FRAG);
+    this.carLightProg = linkProgram(gl, CARLIGHT_VERT, CARLIGHT_FRAG);
     this.vehicleProg = linkProgram(gl, VEHICLE_VERT, VEHICLE_FRAG);
+    this.cloudProg = linkProgram(gl, FULLSCREEN_VERT, CLOUD_FRAG);
     this.markerProg = linkProgram(gl, MARKER_VERT, MARKER_FRAG);
+    this.rainProg = linkProgram(gl, RAIN_VERT, RAIN_FRAG);
 
     const tex = gl.createTexture();
     if (!tex) throw new Error("Failed to allocate depth texture array");
@@ -440,8 +610,8 @@ export class WebGLOverlay {
     );
 
     for (const tile of depthTiles) {
-      if (!tile.bitmap) continue;
       const layer = tile.row * cols + tile.col;
+      const source = tile.bitmap ?? tile.rgba;
       gl.texSubImage3D(
         gl.TEXTURE_2D_ARRAY,
         0,
@@ -453,8 +623,12 @@ export class WebGLOverlay {
         1,
         gl.RGBA,
         gl.UNSIGNED_BYTE,
-        tile.bitmap,
+        source as TexImageSource,
       );
+      if (tile.bitmap) {
+        tile.bitmap.close();
+        tile.bitmap = null;
+      }
     }
 
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -462,9 +636,117 @@ export class WebGLOverlay {
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    const emptyVao = gl.createVertexArray();
-    if (!emptyVao) throw new Error("Failed to create VAO");
-    this.emptyVao = emptyVao;
+    const vao = gl.createVertexArray();
+    if (!vao) throw new Error("Failed to create empty VAO");
+    this.emptyVao = vao;
+
+    // Instanced city-wide streetlamp glow quad VAO
+    const lVao = gl.createVertexArray();
+    const lCornerBuf = gl.createBuffer();
+    const lInstBuf = gl.createBuffer();
+    if (!lVao || !lCornerBuf || !lInstBuf) throw new Error("Failed to create lamp buffers");
+    this.lampVao = lVao;
+    this.lampInstanceBuf = lInstBuf;
+    gl.bindVertexArray(lVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, lCornerBuf);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW,
+    );
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, lInstBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, 0, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+    gl.vertexAttribDivisor(1, 1);
+
+    // Instanced illustrated pedestrian quad VAO
+    const pVao = gl.createVertexArray();
+    const pCornerBuf = gl.createBuffer();
+    const pInstBuf = gl.createBuffer();
+    if (!pVao || !pCornerBuf || !pInstBuf) throw new Error("Failed to create pedestrian buffers");
+    this.pedVao = pVao;
+    this.pedInstanceBuf = pInstBuf;
+    gl.bindVertexArray(pVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pCornerBuf);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW,
+    );
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, pInstBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, 0, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+    gl.vertexAttribDivisor(1, 1);
+
+    // Instanced Gaussian headlight cones & brake/taillight halos
+    const clVao = gl.createVertexArray();
+    const clCornerBuf = gl.createBuffer();
+    const clInstBuf = gl.createBuffer();
+    if (!clVao || !clCornerBuf || !clInstBuf) throw new Error("Failed to create car light buffers");
+    this.carLightVao = clVao;
+    this.carLightInstanceBuf = clInstBuf;
+    gl.bindVertexArray(clVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, clCornerBuf);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW,
+    );
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, clInstBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0);
+    gl.vertexAttribDivisor(1, 1);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16);
+    gl.vertexAttribDivisor(2, 1);
+
+    // Instanced screen-space falling rain quad VAO
+    const rVao = gl.createVertexArray();
+    const rBuf = gl.createBuffer();
+    if (!rVao || !rBuf) throw new Error("Failed to create rain VAO");
+    this.rainVao = rVao;
+    gl.bindVertexArray(rVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, rBuf);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW,
+    );
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    this.sedanMeshes = (
+      [
+        [0.95, 0.96, 0.97], // crisp pearl white
+        [0.92, 0.93, 0.95], // white x2 weight matching Small SF
+        [0.72, 0.75, 0.80], // metallic silver
+        [0.94, 0.89, 0.78], // warm cream
+        [0.19, 0.21, 0.25], // obsidian black
+        [0.24, 0.37, 0.55], // steel blue
+        [0.72, 0.22, 0.20], // crimson
+        [0.38, 0.50, 0.41], // sage green
+        [0.91, 0.58, 0.16], // warm amber
+      ] as const
+    ).map((rgb) => createStaticMeshVao(gl, buildSedanMesh(rgb)));
+    this.taxiMesh = createStaticMeshVao(gl, buildTaxiMesh());
+    this.vanMesh = createStaticMeshVao(gl, buildVanMesh());
+    this.truckMesh = createStaticMeshVao(gl, buildBoxTruckMesh());
+    this.podCarMesh = createStaticMeshVao(gl, buildPodCarMesh());
 
     this.busMeshes = {
       articulated: createStaticMeshVao(gl, buildArticulatedBusMesh()),
@@ -476,6 +758,29 @@ export class WebGLOverlay {
       cityBus: createStaticMeshVao(
         gl,
         buildSingleDeckBusMesh([0.15, 0.36, 0.6], [0.93, 0.93, 0.9]),
+      ),
+    };
+
+    this.railMeshes = {
+      "jr-keihin-tohoku": createStaticMeshVao(
+        gl,
+        buildRailcarMesh([0.86, 0.89, 0.92], [0.02, 0.72, 0.92], [0.76, 0.79, 0.84]),
+      ),
+      "jr-tokaido": createStaticMeshVao(
+        gl,
+        buildRailcarMesh([0.86, 0.89, 0.92], [0.94, 0.52, 0.10], [0.76, 0.79, 0.84]),
+      ),
+      "jr-yokosuka": createStaticMeshVao(
+        gl,
+        buildRailcarMesh([0.89, 0.90, 0.88], [0.06, 0.38, 0.76], [0.75, 0.78, 0.82]),
+      ),
+      "keikyu-main": createStaticMeshVao(
+        gl,
+        buildRailcarMesh([0.85, 0.15, 0.20], [0.97, 0.95, 0.90], [0.80, 0.80, 0.82]),
+      ),
+      "sotetsu-main": createStaticMeshVao(
+        gl,
+        buildRailcarMesh([0.12, 0.24, 0.50], [0.18, 0.34, 0.68], [0.24, 0.28, 0.36]),
       ),
     };
 
@@ -503,6 +808,30 @@ export class WebGLOverlay {
     this.markerVao = mVao;
 
     gl.bindVertexArray(null);
+  }
+
+  setStreetlights(points: Float32Array | null): void {
+    const gl = this.gl;
+    if (!points || points.length < 4) {
+      this.lampCount = 0;
+      return;
+    }
+    this.lampCount = Math.floor(points.length / 4);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.lampInstanceBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, points.subarray(0, this.lampCount * 4), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  }
+
+  setPedestrians(points: Float32Array | null): void {
+    const gl = this.gl;
+    if (!points || points.length < 4) {
+      this.pedCount = 0;
+      return;
+    }
+    this.pedCount = Math.floor(points.length / 4);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.pedInstanceBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, points.subarray(0, this.pedCount * 4), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
   private bindCommonDepthUniforms(prog: WebGLProgram): void {
@@ -539,7 +868,7 @@ export class WebGLOverlay {
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
-    // 1. Fullscreen overlay (glow horizon, warm night windows & streetlights, depth/grid QA)
+    // 1. Fullscreen overlay (glow horizon, warm night windows, depth/grid QA)
     gl.disable(gl.DEPTH_TEST);
     gl.useProgram(this.overlayProg);
     this.bindCommonDepthUniforms(this.overlayProg);
@@ -575,8 +904,130 @@ export class WebGLOverlay {
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // 2. 3D Depth-Occluded Wakes, Ships & Multi-Livery Buses
-    const hasMovingObjects = opts.vehicles.length > 0 || opts.portCalls.length > 0;
+    // 1a. Illustrated miniature pedestrians along sidewalks, plazas & piers
+    if (this.pedCount > 0 && opts.pedAlpha > 0.01) {
+      gl.useProgram(this.pedProg);
+      this.bindCommonDepthUniforms(this.pedProg);
+      gl.uniform2f(
+        gl.getUniformLocation(this.pedProg, "u_viewTopLeftPx"),
+        opts.viewTopLeftImgPx.x,
+        opts.viewTopLeftImgPx.y,
+      );
+      gl.uniform2f(
+        gl.getUniformLocation(this.pedProg, "u_viewBottomRightPx"),
+        opts.viewBottomRightImgPx.x,
+        opts.viewBottomRightImgPx.y,
+      );
+      gl.uniform1f(gl.getUniformLocation(this.pedProg, "u_pedAlpha"), opts.pedAlpha);
+      gl.uniform3f(
+        gl.getUniformLocation(this.pedProg, "u_skyTintRgb"),
+        opts.skyTintRgb[0],
+        opts.skyTintRgb[1],
+        opts.skyTintRgb[2],
+      );
+      gl.bindVertexArray(this.pedVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.pedCount);
+    }
+
+    // 1b. City-wide OSM streetlamps along all Yokohama roads & plazas at dusk/night
+    if (this.lampCount > 0 && opts.nightIntensity > 0.05) {
+      gl.useProgram(this.lampProg);
+      this.bindCommonDepthUniforms(this.lampProg);
+      gl.uniform2f(
+        gl.getUniformLocation(this.lampProg, "u_viewTopLeftPx"),
+        opts.viewTopLeftImgPx.x,
+        opts.viewTopLeftImgPx.y,
+      );
+      gl.uniform2f(
+        gl.getUniformLocation(this.lampProg, "u_viewBottomRightPx"),
+        opts.viewBottomRightImgPx.x,
+        opts.viewBottomRightImgPx.y,
+      );
+      gl.uniform1f(gl.getUniformLocation(this.lampProg, "u_nightIntensity"), opts.nightIntensity);
+      gl.bindVertexArray(this.lampVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.lampCount);
+    }
+
+    // 1c. Ground-projected Gaussian car headlights & red brake/taillight halos (drawn before 3D cars)
+    const hasAmbientCars = opts.carAlpha > 0.01 && opts.ambientCars.length > 0;
+    const imgPxPerCssPx =
+      (opts.viewBottomRightImgPx.x - opts.viewTopLeftImgPx.x) / Math.max(1, opts.viewportCssWidth);
+    const beamHeadIntensity =
+      opts.carAlpha * Math.max(opts.nightIntensity * 0.94, opts.rainIntensity * 0.48);
+
+    if (hasAmbientCars && (beamHeadIntensity > 0.03 || opts.nightIntensity > 0.08 || opts.ambientCars.some((x) => x.braking))) {
+      const c = this.camera;
+      const lightFloats: number[] = [];
+      for (const ac of opts.ambientCars) {
+        const originLocal = wgs84ToLocal(c, ac.lon, ac.lat, ac.elevM + 0.35);
+        const rad = (ac.bearingDeg * Math.PI) / 180;
+        const aheadLocal = [
+          originLocal[0] + Math.sin(rad),
+          originLocal[1] + Math.cos(rad),
+          originLocal[2],
+        ] as const;
+        const p0 = localToImage(c, originLocal);
+        const p1 = localToImage(c, aheadLocal);
+        const dx = p1.px - p0.px;
+        const dy = p1.py - p0.py;
+        const pxPerM = Math.hypot(dx, dy) || 1;
+        const dirX = dx / pxPerM;
+        const dirY = dy / pxPerM;
+
+        if (beamHeadIntensity > 0.03) {
+          lightFloats.push(
+            p0.px + dirX * (2.15 * pxPerM),
+            p0.py + dirY * (2.15 * pxPerM),
+            p0.depthM,
+            beamHeadIntensity,
+            dirX,
+            dirY,
+            pxPerM,
+            0,
+          );
+        }
+        const tailIntensity =
+          opts.carAlpha * Math.max(opts.nightIntensity * 0.68, ac.braking ? 0.80 : 0);
+        if (tailIntensity > 0.03) {
+          lightFloats.push(
+            p0.px - dirX * (2.20 * pxPerM),
+            p0.py - dirY * (2.20 * pxPerM),
+            p0.depthM,
+            tailIntensity,
+            dirX,
+            dirY,
+            pxPerM,
+            1,
+          );
+        }
+      }
+
+      if (lightFloats.length >= 8) {
+        gl.useProgram(this.carLightProg);
+        this.bindCommonDepthUniforms(this.carLightProg);
+        gl.uniform2f(
+          gl.getUniformLocation(this.carLightProg, "u_viewTopLeftPx"),
+          opts.viewTopLeftImgPx.x,
+          opts.viewTopLeftImgPx.y,
+        );
+        gl.uniform2f(
+          gl.getUniformLocation(this.carLightProg, "u_viewBottomRightPx"),
+          opts.viewBottomRightImgPx.x,
+          opts.viewBottomRightImgPx.y,
+        );
+        gl.bindVertexArray(this.carLightVao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.carLightInstanceBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lightFloats), gl.DYNAMIC_DRAW);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, lightFloats.length / 8);
+      }
+    }
+
+    // 2. 3D Depth-Occluded Wakes, Ships, Multi-Livery Buses, Multi-Car Trains & Ambient Cars
+    const hasMovingObjects =
+      opts.vehicles.length > 0 ||
+      opts.portCalls.length > 0 ||
+      opts.trains.length > 0 ||
+      hasAmbientCars;
     if (hasMovingObjects) {
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
@@ -615,10 +1066,17 @@ export class WebGLOverlay {
       const uScaleLoc = gl.getUniformLocation(this.vehicleProg, "u_meshScale");
       const uTintLoc = gl.getUniformLocation(this.vehicleProg, "u_tint");
       const uSelectedLoc = gl.getUniformLocation(this.vehicleProg, "u_isSelected");
+      const uGhostLoc = gl.getUniformLocation(this.vehicleProg, "u_occludedGhostAlpha");
+      const uOutlineExpandLoc = gl.getUniformLocation(this.vehicleProg, "u_outlineExpandM");
+      const uIsOutlineLoc = gl.getUniformLocation(this.vehicleProg, "u_isOutline");
       const uAlphaLoc = gl.getUniformLocation(this.vehicleProg, "u_alpha");
-      const vBri = Math.max(0.78, opts.vehicleBrightness);
+      const vBri = Math.max(0.84, opts.vehicleBrightness);
 
-      // 2a. Soft white foam wakes behind moving boats (depth-tested so they tuck behind piers)
+      gl.uniform1f(uGhostLoc, 0);
+      gl.uniform1f(uOutlineExpandLoc, 0);
+      gl.uniform1f(uIsOutlineLoc, 0);
+
+      // 2a. Soft white foam wakes behind moving boats
       if (opts.portCalls.length > 0 && !opts.xrayOcclusion) {
         gl.depthMask(false);
         gl.bindVertexArray(this.wakeMesh.vao);
@@ -633,7 +1091,7 @@ export class WebGLOverlay {
           gl.uniform3f(uOriginLoc, localPos[0], localPos[1], localPos[2]);
           gl.uniform1f(uHeadingLoc, headingRad);
           gl.uniform3f(uScaleLoc, w * pulse, len * (0.72 + 0.28 * pulse), 1);
-          gl.uniform3f(uTintLoc, Math.max(0.7, vBri), Math.max(0.75, vBri), Math.max(0.84, vBri));
+          gl.uniform3f(uTintLoc, Math.max(0.74, vBri), Math.max(0.78, vBri), Math.max(0.86, vBri));
           gl.uniform1f(uSelectedLoc, 0);
           gl.uniform1f(uAlphaLoc, 0.42);
           gl.drawArrays(gl.TRIANGLES, 0, this.wakeMesh.count);
@@ -658,7 +1116,7 @@ export class WebGLOverlay {
         gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
       }
 
-      // 2c. Multi-Livery Yokohama Buses (Bayside Blue, Akai Kutsu, Pier Line, Municipal Bus)
+      // 2c. Multi-Livery Yokohama Buses
       gl.uniform3f(uScaleLoc, 1, 1, 1);
       gl.uniform1f(uAlphaLoc, 1.0);
       for (const rv of opts.vehicles) {
@@ -683,13 +1141,112 @@ export class WebGLOverlay {
           tint = [1.24, 1.24, 1.08];
         }
         gl.uniform3f(uTintLoc, tint[0] * vBri, tint[1] * vBri, tint[2] * vBri);
-        gl.uniform1f(uSelectedLoc, opts.selectedVehicleId === v.entityId ? 1 : 0);
+        const isSel = opts.selectedVehicleId === v.entityId;
+        gl.uniform1f(uSelectedLoc, isSel ? 1 : 0);
+        gl.uniform1f(uGhostLoc, isSel ? 0.36 : 0.22);
         gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+      }
+
+      // 2d. Multi-Car Real-Track Yokohama Trains (JR, Keikyu, Sotetsu)
+      for (const tr of opts.trains) {
+        const mesh = this.railMeshes[tr.lineId];
+        gl.bindVertexArray(mesh.vao);
+        const isSelected = opts.selectedTrainId === tr.id;
+        const sTint = isSelected ? 1.22 : 1.0;
+        const nightPop = 1.0 + opts.nightIntensity * 0.16;
+        gl.uniform3f(uScaleLoc, tr.carWidthM, tr.carLengthM, tr.carHeightM);
+        gl.uniform3f(uTintLoc, sTint * vBri * nightPop, sTint * vBri * nightPop, sTint * vBri * nightPop);
+        gl.uniform1f(uSelectedLoc, isSelected ? 1 : 0);
+        gl.uniform1f(uGhostLoc, isSelected ? 0.36 : 0.22);
+        gl.uniform1f(uAlphaLoc, 1.0);
+        for (const car of tr.cars) {
+          const localPos = wgs84ToLocal(c, car.lon, car.lat, car.elevM);
+          gl.uniform3f(uOriginLoc, localPos[0], localPos[1], localPos[2]);
+          gl.uniform1f(uHeadingLoc, (car.bearingDeg * Math.PI) / 180);
+          gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+        }
+      }
+
+      // 2e. Ambient zoom-in Yokohama street cars + crisp comic ink silhouette outlines
+      if (hasAmbientCars) {
+        const drawAmbientFleet = () => {
+          for (const ac of opts.ambientCars) {
+            const mesh =
+              ac.kind === 1
+                ? this.taxiMesh
+                : ac.kind === 2
+                  ? this.vanMesh
+                  : ac.kind === 3
+                    ? this.truckMesh
+                    : ac.kind === 4
+                      ? this.podCarMesh
+                      : this.sedanMeshes[ac.colorIdx % this.sedanMeshes.length]!;
+            gl.bindVertexArray(mesh.vao);
+            const localPos = wgs84ToLocal(c, ac.lon, ac.lat, ac.elevM);
+            gl.uniform3f(uOriginLoc, localPos[0], localPos[1], localPos[2]);
+            gl.uniform1f(uHeadingLoc, (ac.bearingDeg * Math.PI) / 180);
+            gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+          }
+        };
+
+        gl.uniform3f(uScaleLoc, 1, 1, 1);
+        gl.uniform3f(uTintLoc, vBri, vBri, vBri);
+        gl.uniform1f(uSelectedLoc, 0);
+        gl.uniform1f(uGhostLoc, 0);
+        gl.uniform1f(uOutlineExpandLoc, 0);
+        gl.uniform1f(uIsOutlineLoc, 0);
+        gl.uniform1f(uAlphaLoc, opts.carAlpha);
+        drawAmbientFleet();
+
+        if (imgPxPerCssPx < 1.8 && opts.carAlpha > 0.5) {
+          gl.uniform1f(uOutlineExpandLoc, 0.14);
+          gl.uniform1f(uIsOutlineLoc, 1);
+          drawAmbientFleet();
+          gl.uniform1f(uOutlineExpandLoc, 0);
+          gl.uniform1f(uIsOutlineLoc, 0);
+        }
       }
     }
 
-    // 3. Synchronized Verification Point Markers (Deck point, GCPs)
+    // 2b. Fluffy Zoomed-Out Cumulus Clouds framing outer areas & canvas sky edge
     gl.disable(gl.DEPTH_TEST);
+    gl.useProgram(this.cloudProg);
+    gl.uniform2f(
+      gl.getUniformLocation(this.cloudProg, "u_viewTopLeftPx"),
+      opts.viewTopLeftImgPx.x,
+      opts.viewTopLeftImgPx.y,
+    );
+    gl.uniform2f(
+      gl.getUniformLocation(this.cloudProg, "u_viewBottomRightPx"),
+      opts.viewBottomRightImgPx.x,
+      opts.viewBottomRightImgPx.y,
+    );
+    gl.uniform1i(gl.getUniformLocation(this.cloudProg, "u_imageWidth"), this.camera.imageWidthPx);
+    gl.uniform1i(gl.getUniformLocation(this.cloudProg, "u_imageHeight"), this.camera.imageHeightPx);
+    gl.uniform1f(gl.getUniformLocation(this.cloudProg, "u_imgPxPerCssPx"), imgPxPerCssPx);
+    gl.uniform1f(gl.getUniformLocation(this.cloudProg, "u_simTimeSec"), opts.simTimeSec);
+    gl.uniform3f(
+      gl.getUniformLocation(this.cloudProg, "u_cloudShadowRgb"),
+      opts.cloudShadowRgb[0],
+      opts.cloudShadowRgb[1],
+      opts.cloudShadowRgb[2],
+    );
+    gl.uniform3f(
+      gl.getUniformLocation(this.cloudProg, "u_cloudBaseRgb"),
+      opts.cloudBaseRgb[0],
+      opts.cloudBaseRgb[1],
+      opts.cloudBaseRgb[2],
+    );
+    gl.uniform3f(
+      gl.getUniformLocation(this.cloudProg, "u_cloudHighlightRgb"),
+      opts.cloudHighlightRgb[0],
+      opts.cloudHighlightRgb[1],
+      opts.cloudHighlightRgb[2],
+    );
+    gl.bindVertexArray(this.emptyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // 3. Synchronized Verification Point Markers (Deck point, GCPs)
     gl.useProgram(this.markerProg);
     this.bindCommonDepthUniforms(this.markerProg);
     gl.uniform2f(
@@ -752,6 +1309,26 @@ export class WebGLOverlay {
           [0.12, 0.12, 0.16, 0.95],
         );
       }
+    }
+
+    // 4. Falling diagonal rain streaks across the viewport on rainy days
+    if (opts.rainIntensity > 0.05) {
+      gl.useProgram(this.rainProg);
+      gl.uniform2f(
+        gl.getUniformLocation(this.rainProg, "u_viewportCssSize"),
+        opts.viewportCssWidth,
+        opts.viewportCssHeight,
+      );
+      gl.uniform1f(gl.getUniformLocation(this.rainProg, "u_simTimeSec"), opts.simTimeSec);
+      gl.uniform1f(gl.getUniformLocation(this.rainProg, "u_rainIntensity"), opts.rainIntensity);
+      gl.uniform1f(gl.getUniformLocation(this.rainProg, "u_windSlope"), opts.windSlope);
+      gl.uniform1f(
+        gl.getUniformLocation(this.rainProg, "u_reducedMotion"),
+        opts.reducedMotion ? 1 : 0,
+      );
+      gl.bindVertexArray(this.rainVao);
+      const streakCount = Math.round(90 + opts.rainIntensity * 90);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, streakCount);
     }
 
     gl.bindVertexArray(null);
