@@ -118,9 +118,18 @@ function main() {
   rmSync(DEPLOY_DIR, { recursive: true, force: true });
   mkdirSync(DST_RELEASE_DIR, { recursive: true });
 
-  // Copy only built SPA entry, icons, manifest, and bundled JS/CSS assets (never copy viewer/dist/releases/)
+  // Copy only built SPA entry, icons, manifest, serverless API routes, and bundled JS/CSS assets (never copy viewer/dist/releases/)
   cpSync(join(VIEWER_DIST_DIR, "index.html"), join(DEPLOY_DIR, "index.html"));
   cpSync(join(VIEWER_DIST_DIR, "assets"), join(DEPLOY_DIR, "assets"), { recursive: true });
+  const apiDir = join(ROOT_DIR, "api");
+  if (existsSync(apiDir)) {
+    mkdirSync(join(DEPLOY_DIR, "api"), { recursive: true });
+    for (const entry of readdirSync(apiDir)) {
+      if (entry.endsWith(".js")) {
+        cpSync(join(apiDir, entry), join(DEPLOY_DIR, "api", entry));
+      }
+    }
+  }
   for (const staticFile of [
     "favicon.ico",
     "favicon.svg",
@@ -129,6 +138,7 @@ function main() {
     "icon-192.png",
     "icon-512.png",
     "site.webmanifest",
+    "og-image.jpg",
   ]) {
     const src = join(VIEWER_DIST_DIR, staticFile);
     if (!existsSync(src)) {

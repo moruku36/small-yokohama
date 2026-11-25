@@ -4,7 +4,9 @@ import {
   type PoiRecord,
 } from "@small-yokohama/core";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
+import type { ResolvedTrain } from "../data/trainFeed.js";
 import type { AnimatedPortCall, ResolvedFeedState } from "../data/vehicleFeed.js";
+import type { WeatherMode } from "../data/weatherFeed.js";
 import {
   formatAddress,
   formatCategory,
@@ -16,11 +18,14 @@ import {
   type Lang,
 } from "../i18n.js";
 import type { DropTab, FeedPreset, MapVariant, ViewerState } from "../state.js";
-import { getSkyPresetsForDate, getSunDateForHourJst } from "../viewer/skyLighting.js";
+import { SKY_PRESETS, getSkyPresetsForDate, getSunDateForHourJst } from "../viewer/skyLighting.js";
 
 export type BooleanOptionKey =
+  | "showTrains"
   | "showBuses"
   | "showBoats"
+  | "showTraffic"
+  | "showPedestrians"
   | "showLabels"
   | "showDepthMap"
   | "xrayOcclusion"
@@ -44,11 +49,13 @@ export interface UiHandlers {
   onChangeVariant: (v: MapVariant) => void;
   onChangeFeed: (f: FeedPreset) => void;
   onChangeSunHour: (hour: number | null) => void;
+  onChangeWeatherMode: (mode: WeatherMode) => void;
   onTogglePlay: () => void;
   onToggleOption: (key: BooleanOptionKey) => void;
   onSelectLandmarkId: (id: string) => void;
   onSelectPoi: (poi: PoiRecord) => void;
   onSelectPortCall: (pc: AnimatedPortCall) => void;
+  onSelectTrain: (tr: ResolvedTrain) => void;
   onClearSelection: () => void;
 }
 
@@ -230,11 +237,15 @@ function renderPlacesGroupsHtml(
 ): string {
   const d = getDict(state.lang);
   const landmarks: Landmark[] = [];
+  const stations: Landmark[] = [];
+  const corporate: Landmark[] = [];
   const piersAndBridges: Landmark[] = [];
   const parks: Landmark[] = [];
 
   for (const lm of bundle.landmarks) {
-    if (lm.category === "park") parks.push(lm);
+    if (lm.category === "station") stations.push(lm);
+    else if (lm.id.startsWith("cur-")) corporate.push(lm);
+    else if (lm.category === "park") parks.push(lm);
     else if (lm.category === "pier" || lm.category === "bridge") piersAndBridges.push(lm);
     else landmarks.push(lm);
   }
@@ -284,6 +295,8 @@ function renderPlacesGroupsHtml(
 
   return (
     renderGroup(d.placesGroups.landmarks, landmarks) +
+    renderGroup(d.placesGroups.stations, stations) +
+    renderGroup(d.placesGroups.corporate, corporate) +
     renderGroup(d.placesGroups.piers, piersAndBridges) +
     renderGroup(d.placesGroups.parks, parks) +
     shipsHtml
@@ -302,6 +315,7 @@ export function renderDrop(
   bundle: LoadedReleaseBundle,
   feed: ResolvedFeedState | null,
   handlers: UiHandlers,
+  trains: readonly ResolvedTrain[] = [],
 ): void {
   if (!state.activeTab) {
     el.hidden = true;
@@ -362,8 +376,10 @@ export function renderDrop(
   }
 
   // Layers tab (Small SF typographic toggles + compact Sky pills + Dev/QA accordion)
+  const trainCount = trains.length;
   const busCount = feed?.vehicles.length ?? 0;
   const boatCount = feed?.portCalls.length ?? 0;
+  const trainLabel = state.lang === "en" ? `${trainCount} live` : `${trainCount}編成`;
   const busLabel = state.lang === "en" ? `${busCount} live` : `${busCount}台`;
   const boatLabel = state.lang === "en" ? `${boatCount} scheduled` : `${boatCount}隻`;
   const presets = getSkyPresetsForDate(new Date());
@@ -384,6 +400,10 @@ export function renderDrop(
 
   el.innerHTML = `
     <div class="layers">
+      <button type="button" class="layer-btn" data-toggle="showTrains" aria-pressed="${state.showTrains}">
+        <span>${escapeHtml(d.layerTrains)}</span>
+        <small>${escapeHtml(trainLabel)}</small>
+      </button>
       <button type="button" class="layer-btn" data-toggle="showBuses" aria-pressed="${state.showBuses}">
         <span>${escapeHtml(d.layerBuses)}</span>
         <small>${escapeHtml(busLabel)}</small>
@@ -391,6 +411,14 @@ export function renderDrop(
       <button type="button" class="layer-btn" data-toggle="showBoats" aria-pressed="${state.showBoats}">
         <span>${escapeHtml(d.layerBoats)}</span>
         <small>${escapeHtml(boatLabel)}</small>
+      </button>
+      <button type="button" class="layer-btn" data-toggle="showTraffic" aria-pressed="${state.showTraffic}">
+        <span>${escapeHtml(d.layerTraffic)}</span>
+        <small>OSM</small>
+      </button>
+      <button type="button" class="layer-btn" data-toggle="showPedestrians" aria-pressed="${state.showPedestrians}">
+        <span>${escapeHtml(d.layerPedestrians)}</span>
+        <small>${state.lang === "en" ? "Sidewalks" : "街並み"}</small>
       </button>
       <button type="button" class="layer-btn" data-toggle="showLabels" aria-pressed="${state.showLabels}">
         <span>${escapeHtml(d.layerLabels)}</span>
@@ -409,6 +437,18 @@ export function renderDrop(
               const active = isSkyPresetActive(state.sunHourJst, item.value);
               const valStr = item.value === null ? "live" : String(item.value);
               return `<button type="button" class="sky-pill${active ? " active" : ""}" data-sun="${valStr}" aria-pressed="${active}">${escapeHtml(item.label)}</button>`;
+            })
+            .join("")}
+        </div>
+      </div>
+
+      <div class="sky-row">
+        <span class="sky-row-label">${escapeHtml(d.layerWeather)}</span>
+        <div class="sky-pills" role="group" aria-label="${escapeHtml(d.layerWeather)}">
+          ${(["live", "clear", "rain"] as const)
+            .map((m) => {
+              const active = state.weatherMode === m;
+              return `<button type="button" class="sky-pill${active ? " active" : ""}" data-weather="${m}" aria-pressed="${active}">${escapeHtml(d.weatherPresets[m])}</button>`;
             })
             .join("")}
         </div>
@@ -460,6 +500,13 @@ export function renderDrop(
     });
   });
 
+  el.querySelectorAll<HTMLButtonElement>("button[data-weather]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const w = btn.dataset.weather as WeatherMode | undefined;
+      if (w) handlers.onChangeWeatherMode(w);
+    });
+  });
+
   el.querySelector("#sel-variant")?.addEventListener("change", (e) => {
     handlers.onChangeVariant((e.target as HTMLSelectElement).value as MapVariant);
   });
@@ -480,6 +527,7 @@ export function renderCard(
   feed: ResolvedFeedState | null,
   driftCssPx: number,
   handlers: UiHandlers,
+  trains: readonly ResolvedTrain[] = [],
 ): void {
   const sel = state.selected;
   if (!sel) {
@@ -522,6 +570,27 @@ export function renderCard(
       <dd>${driftCssPx.toFixed(3)} px</dd>
     `;
     gmapsUrl = buildGoogleMapsUrl(v.lat, v.lon, title);
+  } else if (sel.kind === "train") {
+    const tr = trains.find((x) => x.id === sel.train.id) ?? sel.train;
+    const modeLabel = d.modeLabels[tr.mode];
+    const badgeCls = tr.mode === "observed" ? "observed" : "";
+    title = `${tr.code} ${state.lang === "en" ? tr.lineNameEn : tr.lineNameJa}`;
+    sub = `${state.lang === "en" ? tr.operatorEn : tr.operatorJa} · #${tr.trainNumber}`;
+    badgeHtml = `<span class="badge ${badgeCls}">${escapeHtml(modeLabel)}</span>`;
+    const carsText = state.lang === "en" ? `${tr.carCount} cars` : `${tr.carCount}両編成`;
+    rowsHtml = `
+      <dt>${escapeHtml(d.fields.status)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? tr.statusEn : tr.statusJa)}</dd>
+      <dt>${escapeHtml(d.fields.direction)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? tr.directionEn : tr.directionJa)}</dd>
+      <dt>${escapeHtml(d.fields.nextStop)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? tr.nextStopEn : tr.nextStopJa)}</dd>
+      <dt>${escapeHtml(d.fields.trainType)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? tr.trainTypeEn : tr.trainTypeJa)} (${escapeHtml(carsText)})</dd>
+      <dt>${escapeHtml(d.fields.source)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? tr.sourceEn : tr.sourceJa)}</dd>
+    `;
+    gmapsUrl = buildGoogleMapsUrl(tr.lat, tr.lon, state.lang === "en" ? tr.lineNameEn : tr.lineNameJa);
   } else if (sel.kind === "landmark") {
     const lm = sel.landmark;
     title = state.lang === "en" ? lm.nameEn : lm.nameJa;
@@ -622,12 +691,14 @@ export function renderStatus(
   el: HTMLElement,
   state: ViewerState,
   feed: ResolvedFeedState | null,
+  trains: readonly ResolvedTrain[] = [],
+  weatherStatusText?: string,
 ): void {
   const d = getDict(state.lang);
   const sunDate = getSunDateForHourJst(state.sunHourJst);
   const sun = computeYokohamaSun(sunDate);
   const timeText = formatTimeStatusText(sunDate, state.lang);
-  const skyText = d.skyDescriptions[sun.phase];
+  const skyText = weatherStatusText || d.skyDescriptions[sun.phase];
 
   const dotCls =
     !feed || feed.feedHealth === "ok"
@@ -636,14 +707,15 @@ export function renderStatus(
         ? "outage"
         : "warn";
 
+  const trainCount = state.showTrains ? trains.length : 0;
   const busCount = state.showBuses ? (feed?.vehicles.length ?? 0) : 0;
   const boatCount = state.showBoats ? (feed?.portCalls.length ?? 0) : 0;
   const tvSuffix = state.tvMode ? `<span class="g">${escapeHtml(d.tvTourLabel)}</span>` : "";
 
   const countsHtml =
     state.lang === "en"
-      ? `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span><span class="live-n">${busCount}</span> buses</span><span class="g"><span class="live-n">${boatCount}</span> ships</span>`
-      : `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>バス <span class="live-n">${busCount}</span></span><span class="g">客船 <span class="live-n">${boatCount}</span></span>`;
+      ? `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span><span class="live-n">${trainCount}</span> trains</span><span class="g"><span class="live-n">${busCount}</span> buses</span><span class="g"><span class="live-n">${boatCount}</span> ships</span>`
+      : `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>電車 <span class="live-n">${trainCount}</span></span><span class="g">バス <span class="live-n">${busCount}</span></span><span class="g">客船 <span class="live-n">${boatCount}</span></span>`;
 
   const nextHtml = `<span class="status-when">${escapeHtml(timeText)}</span><span class="status-now"><span class="g">${escapeHtml(skyText)}</span>${countsHtml}${tvSuffix}</span>`;
   if (el.innerHTML !== nextHtml) {

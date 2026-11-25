@@ -48,7 +48,7 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
   it("round-trips share URL parameters and clamps out-of-bounds viewports", () => {
     const state = createInitialViewerState(
       cam,
-      "?lang=en&theme=dark&v=plain&m=scheduled&x=2400&y=1700&z=2.8&sun=17.25&buses=0&labels=0&depth=1&gcp=1&deck=1",
+      "?lang=en&theme=dark&v=plain&m=scheduled&x=2400&y=1700&z=2.8&sun=17.25&weather=rain&buses=0&trains=0&cars=0&people=0&labels=0&depth=1&gcp=1&deck=1",
       false,
     );
     expect(state.lang).toBe("en");
@@ -56,7 +56,11 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     expect(state.variant).toBe("plain");
     expect(state.feedPreset).toBe("scheduled");
     expect(state.cameraView).toEqual({ centerImgX: 2400, centerImgY: 1700, zoom: 2.8 });
+    expect(state.weatherMode).toBe("rain");
     expect(state.showBuses).toBe(false);
+    expect(state.showTrains).toBe(false);
+    expect(state.showTraffic).toBe(false);
+    expect(state.showPedestrians).toBe(false);
     expect(state.showBoats).toBe(true);
     expect(state.showLabels).toBe(false);
     expect(state.showDepthMap).toBe(true);
@@ -64,11 +68,19 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     expect(state.showDeckTestPoint).toBe(true);
 
     const url = serializeShareUrl(state, "https://small-yokohama.example/");
+    expect(url).toContain("trains=0");
+    expect(url).toContain("weather=rain");
+    expect(url).toContain("cars=0");
+    expect(url).toContain("people=0");
     const reparsed = createInitialViewerState(cam, new URL(url).search, false);
     expect(reparsed.theme).toBe("dark");
     expect(reparsed.variant).toBe("plain");
     expect(reparsed.feedPreset).toBe("scheduled");
+    expect(reparsed.weatherMode).toBe("rain");
     expect(reparsed.showBuses).toBe(false);
+    expect(reparsed.showTrains).toBe(false);
+    expect(reparsed.showTraffic).toBe(false);
+    expect(reparsed.showPedestrians).toBe(false);
     expect(reparsed.showLabels).toBe(false);
     expect(reparsed.showDeckTestPoint).toBe(true);
     expect(reparsed.cameraView.centerImgX).toBeCloseTo(2400, 1);
@@ -118,25 +130,29 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
 
     const fullCam = createFullYokohamaCamera();
     const mobileMin = computeFullMapMinZoom(fullCam, 390, 844);
+    expect(mobileMin).toBeGreaterThanOrEqual(0.8);
     const mobileInit = computeDefaultFullMapZoom(fullCam, 390, 844);
     const mobileMax = computeFullMapMaxZoom(fullCam, 390, 844);
     expect(mobileInit).toBeGreaterThan(mobileMin);
     expect(mobileInit).toBeGreaterThan(7);
     expect(mobileInit).toBeLessThan(12);
-    expect(mobileMax).toBeGreaterThan(mobileInit);
-    expect(mobileMax).toBeLessThanOrEqual(25);
+    expect(mobileMax).toBeGreaterThanOrEqual(60);
+    expect(mobileMax).toBeLessThanOrEqual(96);
+    expect((fullCam.imageWidthPx / mobileMax) * fullCam.metersPerPixel).toBeLessThanOrEqual(70);
     const mobileVisibleH =
       (fullCam.imageWidthPx / mobileInit) * (844 / 390);
     expect(mobileVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);
 
     const desktopMin = computeFullMapMinZoom(fullCam, 1280, 800);
+    expect(desktopMin).toBeGreaterThanOrEqual(0.8);
     const desktopInit = computeDefaultFullMapZoom(fullCam, 1280, 800);
     const desktopMax = computeFullMapMaxZoom(fullCam, 1280, 800);
     expect(desktopInit).toBeGreaterThan(desktopMin);
     expect(desktopInit).toBeGreaterThan(6);
     expect(desktopInit).toBeLessThan(10);
-    expect(desktopMax).toBeGreaterThan(desktopInit);
-    expect(desktopMax).toBeLessThanOrEqual(25);
+    expect(desktopMax).toBeGreaterThanOrEqual(50);
+    expect(desktopMax).toBeLessThanOrEqual(96);
+    expect((fullCam.imageWidthPx / desktopMax) * fullCam.metersPerPixel).toBeLessThanOrEqual(95);
     const desktopVisibleH =
       (fullCam.imageWidthPx / desktopInit) * (800 / 1280);
     expect(desktopVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);

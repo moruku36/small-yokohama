@@ -15,8 +15,11 @@ export interface I18nDict {
   navLang: string;
   searchPlaceholder: string;
   searchEmpty: string;
+  layerTrains: string;
   layerBuses: string;
   layerBoats: string;
+  layerTraffic: string;
+  layerPedestrians: string;
   layerLabels: string;
   layerMotion: string;
   layerStyle: string;
@@ -29,6 +32,12 @@ export interface I18nDict {
     dusk: string;
     night: string;
     live: string;
+  };
+  layerWeather: string;
+  weatherPresets: {
+    live: string;
+    clear: string;
+    rain: string;
   };
   feedLabel: string;
   feedOptions: {
@@ -64,6 +73,10 @@ export interface I18nDict {
     schedule: string;
     status: string;
     size: string;
+    trainLine: string;
+    trainType: string;
+    nextStop: string;
+    cars: string;
   };
   vesselKinds: Record<"cruise" | "cruiser" | "waterbus" | "tug", string>;
   underwayLabel: string;
@@ -72,6 +85,8 @@ export interface I18nDict {
   selectedEyebrow: string;
   placesGroups: {
     landmarks: string;
+    stations: string;
+    corporate: string;
     piers: string;
     parks: string;
     ships: string;
@@ -104,8 +119,11 @@ const JA: I18nDict = {
   navLang: "EN",
   searchPlaceholder: "建物・名所・通り・駅を検索 (/)",
   searchEmpty: "該当する施設が見つかりませんでした",
+  layerTrains: "電車（JR・京急・相鉄）",
   layerBuses: "ベイサイドブルー（バス）",
   layerBoats: "港の客船・入港予定",
+  layerTraffic: "街の車（ズーム時）",
+  layerPedestrians: "街の人々",
   layerLabels: "地名ラベル",
   layerMotion: "ライブ動作",
   layerStyle: "描画スタイル",
@@ -118,6 +136,12 @@ const JA: I18nDict = {
     dusk: "黄昏",
     night: "夜",
     live: "現在",
+  },
+  layerWeather: "天気・雨エフェクト",
+  weatherPresets: {
+    live: "自動",
+    clear: "晴れ",
+    rain: "雨",
   },
   feedLabel: "交通フィード",
   feedOptions: {
@@ -159,6 +183,10 @@ const JA: I18nDict = {
     schedule: "予定時刻",
     status: "運航状況",
     size: "船体寸法",
+    trainLine: "路線",
+    trainType: "列車種別",
+    nextStop: "走行区間・次駅",
+    cars: "編成",
   },
   vesselKinds: {
     cruise: "大型客船",
@@ -172,6 +200,8 @@ const JA: I18nDict = {
   selectedEyebrow: "選択中",
   placesGroups: {
     landmarks: "名所・ランドマーク",
+    stations: "主要駅",
+    corporate: "企業本社・文化・図書館",
     piers: "埠頭・海辺・デッキ",
     parks: "公園・庭園",
     ships: "客船・入港予定",
@@ -210,8 +240,11 @@ const EN: I18nDict = {
   navLang: "JA",
   searchPlaceholder: "Find a building, landmark or street (/)",
   searchEmpty: "No matching places found",
+  layerTrains: "Trains (JR / Keikyu / Sotetsu)",
   layerBuses: "Buses (Bayside Blue)",
   layerBoats: "Harbor ships & calls",
+  layerTraffic: "Street traffic (zoom in)",
+  layerPedestrians: "Pedestrians",
   layerLabels: "Labels",
   layerMotion: "Live motion",
   layerStyle: "Map style",
@@ -224,6 +257,12 @@ const EN: I18nDict = {
     dusk: "Dusk",
     night: "Night",
     live: "Live",
+  },
+  layerWeather: "Weather & rain",
+  weatherPresets: {
+    live: "Live",
+    clear: "Clear",
+    rain: "Rain",
   },
   feedLabel: "Transit feed",
   feedOptions: {
@@ -265,6 +304,10 @@ const EN: I18nDict = {
     schedule: "Schedule",
     status: "Status",
     size: "Dimensions",
+    trainLine: "Line",
+    trainType: "Service",
+    nextStop: "Segment / Next stop",
+    cars: "Consist",
   },
   vesselKinds: {
     cruise: "Cruise Liner",
@@ -278,6 +321,8 @@ const EN: I18nDict = {
   selectedEyebrow: "Selected",
   placesGroups: {
     landmarks: "Landmarks",
+    stations: "Stations",
+    corporate: "Corporate HQs & Culture",
     piers: "Piers & promenades",
     parks: "Parks and gardens",
     ships: "Harbor ships",
@@ -325,9 +370,11 @@ const CATEGORY_MAP: Record<string, { en: string; ja: string }> = {
   car: { en: "Auto Services", ja: "自動車関連" },
   chemist: { en: "Pharmacy", ja: "薬局" },
   cinema: { en: "Cinema", ja: "映画館" },
+  civic: { en: "Civic & Heritage", ja: "官庁・歴史建築" },
   clothes: { en: "Apparel", ja: "ファッション" },
   convenience: { en: "Convenience Store", ja: "コンビニ" },
   copyshop: { en: "Print & Copy", ja: "プリント・コピー" },
+  corporate: { en: "Corporate HQ", ja: "企業本社・オフィス" },
   dentist: { en: "Dental Clinic", ja: "歯科" },
   doctors: { en: "Clinic", ja: "クリニック" },
   dry_cleaning: { en: "Dry Cleaning", ja: "クリーニング" },
@@ -341,6 +388,7 @@ const CATEGORY_MAP: Record<string, { en: string; ja: string }> = {
   hotel: { en: "Hotel", ja: "ホテル" },
   information: { en: "Visitor Info", ja: "案内・記念碑" },
   landmark: { en: "Landmark", ja: "ランドマーク" },
+  library: { en: "Library", ja: "図書館" },
   mall: { en: "Shopping Mall", ja: "商業施設" },
   mobile_phone: { en: "Mobile Carrier", ja: "携帯ショップ" },
   museum: { en: "Museum", ja: "ミュージアム" },
@@ -357,6 +405,7 @@ const CATEGORY_MAP: Record<string, { en: string; ja: string }> = {
   public_building: { en: "Public Building", ja: "公共・官庁施設" },
   restaurant: { en: "Restaurant", ja: "レストラン" },
   school: { en: "School", ja: "学校" },
+  station: { en: "Station", ja: "鉄道駅" },
   street: { en: "Street / Crossing", ja: "通り・交差点" },
   supermarket: { en: "Supermarket", ja: "スーパー" },
   townhall: { en: "Government Hall", ja: "官公庁" },

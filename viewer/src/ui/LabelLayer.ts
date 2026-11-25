@@ -1,5 +1,6 @@
 import { wgs84ToImage, type PoiRecord } from "@small-yokohama/core";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
+import type { ResolvedTrain } from "../data/trainFeed.js";
 import type { ResolvedFeedState } from "../data/vehicleFeed.js";
 import type { ViewerState } from "../state.js";
 
@@ -79,6 +80,11 @@ export class LabelLayer {
 
     const sorted = [...bundle.pois].sort((a, b) => {
       if (a.tier !== b.tier) return a.tier - b.tier;
+      const aCur = a.id.startsWith("cur-") || a.id.startsWith("lm-") ? 0 : 1;
+      const bCur = b.id.startsWith("cur-") || b.id.startsWith("lm-") ? 0 : 1;
+      if (aCur !== bCur) return aCur - bCur;
+      if (a.category === "station" && b.category !== "station") return -1;
+      if (b.category === "station" && a.category !== "station") return 1;
       return (b.heightM ?? 0) - (a.heightM ?? 0);
     });
 
@@ -112,6 +118,7 @@ export class LabelLayer {
     bundle: LoadedReleaseBundle,
     state: ViewerState,
     feed: ResolvedFeedState | null,
+    trains: readonly ResolvedTrain[] = [],
   ): { px: number; py: number; label: string; id: string } | null {
     const sel = state.selected;
     if (!sel) return null;
@@ -146,6 +153,16 @@ export class LabelLayer {
         id: `pc:${pc.id}`,
       };
     }
+    if (sel.kind === "train") {
+      const tr = trains.find((x) => x.id === sel.train.id) ?? sel.train;
+      const img = wgs84ToImage(bundle.camera, tr.lon, tr.lat, tr.elevM + tr.carHeightM + 1.5);
+      return {
+        px: img.px,
+        py: img.py,
+        label: `${tr.code} ${state.lang === "en" ? tr.lineNameEn : tr.lineNameJa}`,
+        id: `tr:${tr.id}`,
+      };
+    }
     return null;
   }
 
@@ -156,6 +173,7 @@ export class LabelLayer {
     bounds: ViewportImageBounds | null,
     onSelectPoi: (poi: PoiRecord) => void,
     feed: ResolvedFeedState | null = null,
+    trains: readonly ResolvedTrain[] = [],
   ): void {
     if (!bounds) {
       if (container.childElementCount > 0) {
@@ -171,7 +189,7 @@ export class LabelLayer {
       return;
     }
 
-    const selAnchor = this.resolveSelectedAnchor(bundle, state, feed);
+    const selAnchor = this.resolveSelectedAnchor(bundle, state, feed, trains);
     const renderKey = [
       state.lang,
       state.showLabels ? "1" : "0",
@@ -249,19 +267,19 @@ export class LabelLayer {
 
     if (state.showLabels) {
       const imgPxPerCssPx = spanX / bounds.widthCssPx;
-      const maxTier = imgPxPerCssPx > 4.2 ? 1 : imgPxPerCssPx > 1.7 ? 2 : 3;
+      const maxTier = imgPxPerCssPx > 3.8 ? 1 : imgPxPerCssPx > 1.5 ? 2 : 3;
       const maxLabels =
         maxTier === 1
           ? isNarrow
-            ? 6
-            : 9
+            ? 8
+            : 13
           : maxTier === 2
             ? isNarrow
-              ? 9
-              : 14
+              ? 15
+              : 26
             : isNarrow
-              ? 12
-              : 18;
+              ? 20
+              : 32;
       const items = this.ensureProjected(bundle, state.lang);
       const selectedPoiId = state.selected?.kind === "poi" ? state.selected.poi.id : "";
       const selectedLmId = state.selected?.kind === "landmark" ? state.selected.landmark.id : "";
@@ -308,7 +326,9 @@ export class LabelLayer {
         const btn = document.createElement("button");
         btn.type = "button";
         const isPark = item.poi.category === "park";
-        btn.className = `map-label tier-${item.poi.tier}${isPark ? " park" : ""}`;
+        const isStation = item.poi.category === "station";
+        const isCorp = item.poi.category === "corporate";
+        btn.className = `map-label tier-${item.poi.tier}${isPark ? " park" : ""}${isStation ? " station" : ""}${isCorp ? " corporate" : ""}`;
         btn.style.left = `${cssX.toFixed(1)}px`;
         btn.style.top = `${cssY.toFixed(1)}px`;
         btn.textContent = item.label;

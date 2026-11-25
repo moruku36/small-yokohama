@@ -3,7 +3,8 @@
 **English** · [日本語](README.ja.md) · [Tile assignments and coordinates](docs/tile-grid-plan.md) · [Study area (GeoJSON)](scope/waterfront.geojson) · [System design](docs/design.md) · [Development stack](docs/technology.md) · [Research and sources](docs/research.md)
 
 > **An interactive, zoomable miniature illustration of Yokohama's waterfront** — inspired by [Small SF](https://smallsf.com/).  
-> This open project recreates the waterfront from Yokohama Station through Minato Mirai, Shinko, the Red Brick Warehouse, and Yamashita Park to Motomachi and Chinatown. It combines a 45° orthographic miniature map with ligne claire linework and an overlay based on observed traffic. **All 23 tiles (4 pilot, 12 Phase A, and 7 Phase B) are stitched into a single `15,488 × 5,888 px` panorama. The Deep Zoom Image (DZI) pyramids and full-map viewer are built as `full-yokohama-v1`.**
+> **Live map: [small-yokohama.vercel.app](https://small-yokohama.vercel.app/)**  
+> This open project recreates the waterfront from Yokohama Station through Minato Mirai, Shinko, the Red Brick Warehouse, and Yamashita Park to Motomachi and Chinatown. It combines a 45° orthographic miniature map with ligne claire linework and an overlay based on real transit, weather, and simulated traffic. **All 23 tiles (4 pilot, 12 Phase A, and 7 Phase B) are stitched into a single `15,488 × 5,888 px` panorama. The Deep Zoom Image (DZI) pyramids and full-map viewer are built as `full-yokohama-v1`.**
 
 A blue articulated bus turns a warehouse corner and slips behind the building. Pan along the waterfront to reach Yamashita Park.
 
@@ -19,6 +20,23 @@ A blue articulated bus turns a warehouse corner and slips behind the building. P
 - [x] **Assignment 3** (`phase-a-3`, 4/4 complete, `moruku36`) — Yokohama Station east and west exits, Sogo, Sky Building, Yokohama Bay Quarter, Portside, Tsuruyacho, Tammachi Park, and the Nishi-Kanagawa uplands
 - [x] **Assignment 4** (`phase-b-1`, 4/4 complete, `moruku36`) — southern Yamate, inland south of Motomachi, Ishikawacho Station, Nakamura River, Kannai Station, Odori Park, Noge, Hinodecho, and the Ooka River
 - [x] **Assignment 5** (`phase-b-2`, 3/3 complete, `moruku36`) — Momijizaka, Kamonyama, Tobe Station, National Route 1, Ishizaki River, Hiranumabashi, the spherical gas holders, and Okano Park
+
+---
+
+## Live viewer features (`full-yokohama-v1`)
+
+- **Deep street-level zoom & navigation** — `15,488 × 5,888 px` DZI (`0.34 m/px`) with smooth desktop drag-pan + wheel/trackpad zoom, non-inverted mobile pinch-to-zoom, street-block close-up zoom (~60–90 m wide framing matching Small SF), and zoomed-out fluffy cumulus clouds framing the map border and outer edges.
+- **OSM-routed buses, harbor ships & 5 railway lines**:
+  - **22 buses** (Bayside Blue articulated buses, Akai Kutsu, Pier Line, Municipal City Buses #26 / #8 / #58) routed strictly along real OpenStreetMap surface roads.
+  - **14 Yokohama Harbor vessels** (Asuka II, Diamond Princess, Nippon Maru, Marine Rouge, Marine Shuttle, Royal Wing, Sea Bass water buses, and harbor tugs) with wake animation and harbor water-mask verification.
+  - **5 real-track railway lines** (`JK` Keihin-Tohoku / Negishi, `JT` Tokaido, `JO` Yokosuka / Shonan-Shinjuku, `KK` Keikyu Main with Nogeyama Tunnel hiding, `SO` Sotetsu Main) powered by [`api/trains.js`](api/trains.js) (ODPT live feed + real-time timetable fallback) with clickable badges and detail cards.
+- **Small SF-inspired simulated street traffic & sidewalk pedestrians**:
+  - **832 intersection-split directed OSM road edges** with green/yellow/all-red signal cycles and all-way stops, car-following queues, corner slowdowns, Japanese left-hand multi-lane driving, morning/evening rush-hour & late-night density variation, up to 420 visible 3D vehicles (9 sedan colors, Yokohama taxis, white vans, box trucks, autonomous roof-pod sedans), close-zoom comic ink outlines, Gaussian headlights & brake-reactive taillights, and low-opacity building-occlusion ghosting for live buses and trains.
+  - **2,650 illustrated miniature pedestrians** verified strictly onto sidewalks, plazas, and waterfront decks (`0` on roadways, railway tracks, buildings, or harbor water via 24-tile depth `surfaceKind` and citywide OSM road/rail clearance checks).
+- **Live JST solar lighting, night streetlights & live weather**:
+  - Real-time JST clock and solar altitude lighting (day, golden hour, dusk, deep night) with **1,600 city-wide OSM streetlights** and warm architectural window glows.
+  - Live Yokohama weather via [`api/weather.js`](api/weather.js) (Open-Meteo), real-time temperature/status readout, animated diagonal falling rain streaks, and manual Weather toggle (`Auto / Clear / Rain` or `?weather=rain`).
+- **Bilingual (`JA` / `EN`) landmarks & POIs** — **49 landmarks & 431 POIs** including major stations (Yokohama, Sakuragicho, Kannai, Ishikawacho, Minatomirai, Shin-Takashima, etc.), Pacifico Yokohama, Yokohama Central & Kanagawa Prefectural Libraries, Kanagawa University Minato Mirai Campus, and 23 corporate headquarters.
 
 ---
 
@@ -242,11 +260,20 @@ CRITICAL RULES:
 # Build the 23-tile panorama (15488x5888 DZI, half-resolution data tiles, QA, and preview)
 npm.cmd run build:full
 
+# Regenerate OSM-routed buses, harbor ships, 5 rail lines, 832 traffic edges, 1600 streetlights & 2650 sidewalk pedestrians
+node tools/generate-yokohama-fleet.mjs
+
+# Enrich bilingual landmarks & POIs (49 landmarks / 431 POIs)
+node tools/enrich-yokohama-landmarks.mjs
+
 # Rebuild the four-tile Shinko pilot (pilot-shinko-v1)
 npm.cmd run build:pilot
 
 # Start the dev server (http://127.0.0.1:5173)
 npm.cmd run dev
+
+# Build the Vercel deployment bundle (deploy-vercel/)
+npm.cmd run build:vercel
 ```
 
 ---
@@ -254,5 +281,5 @@ npm.cmd run dev
 ## Credits & License
 
 - **Inspiration**: [Small SF](https://smallsf.com/) · [Author's making-of](https://smallsf.com/about) by Ari Dutilh
-- **Geographic and aerial sources** — [OpenStreetMap (ODbL)](https://www.openstreetmap.org/copyright) · [Geospatial Information Authority of Japan (GSI seamless aerial imagery, z=18)](https://maps.gsi.go.jp/development/ichiran.html) · [Project PLATEAU Yokohama FY2024](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024)
+- **Geographic, aerial, weather & transit sources** — [OpenStreetMap (ODbL)](https://www.openstreetmap.org/copyright) · [Geospatial Information Authority of Japan (GSI seamless aerial imagery, z=18)](https://maps.gsi.go.jp/development/ichiran.html) · [Project PLATEAU Yokohama FY2024](https://www.geospatial.jp/ckan/dataset/plateau-14100-yokohama-shi-2024) · [Open-Meteo](https://open-meteo.com/) · [ODPT (Public Transportation Open Data Center)](https://www.odpt.org/)
 - **Repository code and documentation** — [MIT License](LICENSE). External data and third-party material are subject to their providers' terms. [Sources and attribution requirements](docs/research.md)
