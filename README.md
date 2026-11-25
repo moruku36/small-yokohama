@@ -36,7 +36,7 @@ A blue articulated bus turns a warehouse corner and slips behind the building. P
 - **Live JST solar lighting, night streetlights & live weather**:
   - Real-time JST clock and solar altitude lighting (day, golden hour, dusk, deep night) with **1,600 city-wide OSM streetlights**.
   - Live Yokohama weather via [`api/weather.js`](api/weather.js) (Open-Meteo), real-time temperature/status readout, animated diagonal falling rain streaks, and manual Weather toggle (`Auto / Clear / Rain` or `?weather=rain`).
-- **Bilingual (`JA` / `EN`) landmarks & POIs** — **49 landmarks & 431 POIs** including major stations (Yokohama, Sakuragicho, Kannai, Ishikawacho, Minatomirai, Shin-Takashima, etc.), Pacifico Yokohama, Yokohama Central & Kanagawa Prefectural Libraries, Kanagawa University Minato Mirai Campus, and 23 corporate headquarters.
+- **Bilingual (`JA` / `EN`) landmarks & POIs** — **49 landmarks & 440 POIs** including major stations (Yokohama, Sakuragicho, Kannai, Ishikawacho, Minatomirai, Shin-Takashima, etc.), Pacifico Yokohama, Yokohama Central & Kanagawa Prefectural Libraries, Kanagawa University Minato Mirai Campus, 23 corporate headquarters, and the shops and towers around Yokohama Station (JR Yokohama Tower & NEWoMan, Takashimaya & Sotetsu Joinus, LUMINE, More's, VIVRE).
 - **Small SF-style opening, sound, hover, follow & share links**:
   - Opening the map drops you through a deck of cumulus onto the city (tinted for day, dusk or night); grabbing the map ends the fall early, and `?intro=0` or reduced motion skips it.
   - The speaker button plays a harbour soundscape synthesised in Web Audio (no audio files): lapping waves, a city hum, rain when it rains, ships' horns while ships are on the water, and gulls by day.
@@ -269,7 +269,7 @@ npm.cmd run build:full
 # Regenerate OSM-routed buses, harbor ships, 5 rail lines, 832 traffic edges, 1600 streetlights & 2650 sidewalk pedestrians
 node tools/generate-yokohama-fleet.mjs
 
-# Enrich bilingual landmarks & POIs (49 landmarks / 431 POIs)
+# Enrich bilingual landmarks & POIs (49 landmarks / 440 POIs)
 node tools/enrich-yokohama-landmarks.mjs
 
 # Rebuild the four-tile Shinko pilot (pilot-shinko-v1)
