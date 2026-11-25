@@ -183,7 +183,7 @@ function buildSearchResultsHtml(
   const top = hits.slice(0, 28);
 
   if (top.length === 0) {
-    return `<li style="padding:8px 9px;color:var(--text-muted);font-size:12px;">${escapeHtml(d.searchEmpty)}</li>`;
+    return `<li style="padding:8px 9px;color:var(--u-mute);font-size:13px;">${escapeHtml(d.searchEmpty)}</li>`;
   }
 
   return top
@@ -260,10 +260,10 @@ export function renderDrop(
     el.innerHTML = `
       <div class="find">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="M20 20l-3.8-3.8" />
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="M15.5 15.5 21 21" />
         </svg>
-        <input id="inp-search" type="search" autocomplete="off" placeholder="${escapeHtml(d.searchPlaceholder)}" value="${escapeHtml(state.searchQuery)}" />
+        <input id="inp-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="${escapeHtml(d.searchPlaceholder)}" value="${escapeHtml(state.searchQuery)}" />
       </div>
       <ul id="search-results" class="results">
         ${buildSearchResultsHtml(state, bundle, feed)}
@@ -306,7 +306,7 @@ export function renderDrop(
             (pc) => `
           <li>
             <button type="button" data-portcall-id="${escapeHtml(pc.id)}">
-              <span class="r-name">🚢 ${escapeHtml(state.lang === "en" ? pc.vesselNameEn : pc.vesselNameJa)}</span>
+              <span class="r-name">${escapeHtml(state.lang === "en" ? pc.vesselNameEn : pc.vesselNameJa)}</span>
               <span class="r-sub">${escapeHtml(state.lang === "en" ? pc.berthEn : pc.berthJa)}</span>
             </button>
           </li>`,
@@ -318,7 +318,9 @@ export function renderDrop(
     return;
   }
 
-  // Layers tab
+  // Layers tab (Small SF typographic list with counts)
+  const busCount = feed?.vehicles.length ?? 0;
+  const boatCount = feed?.portCalls.length ?? 0;
   const sunValue = state.sunHourJst === null ? "live" : String(state.sunHourJst);
   const debugToggle = (key: BooleanOptionKey, label: string, checked: boolean) => `
     <label class="debug-row">
@@ -331,15 +333,19 @@ export function renderDrop(
     <div class="layers">
       <button type="button" class="layer-btn" data-toggle="showBuses" aria-pressed="${state.showBuses}">
         <span>${escapeHtml(d.layerBuses)}</span>
-        <small>${state.showBuses ? "ON" : "OFF"}</small>
+        <small>${busCount}</small>
       </button>
       <button type="button" class="layer-btn" data-toggle="showBoats" aria-pressed="${state.showBoats}">
         <span>${escapeHtml(d.layerBoats)}</span>
-        <small>${state.showBoats ? "ON" : "OFF"}</small>
+        <small>${boatCount}</small>
       </button>
       <button type="button" class="layer-btn" data-toggle="showLabels" aria-pressed="${state.showLabels}">
         <span>${escapeHtml(d.layerLabels)}</span>
-        <small>${state.showLabels ? "ON" : "OFF"}</small>
+        <small>${bundle.pois.length}</small>
+      </button>
+      <button type="button" class="layer-btn" id="btn-play" aria-pressed="${state.playing}">
+        <span>${escapeHtml(state.lang === "en" ? "Simulation" : "アニメーション")}</span>
+        <small>${escapeHtml(state.playing ? d.pauseBtn : d.playBtn)}</small>
       </button>
 
       <div class="layer-subrow">
@@ -372,11 +378,6 @@ export function renderDrop(
             .join("")}
         </select>
       </div>
-
-      <button type="button" class="layer-btn" id="btn-play" aria-pressed="${state.playing}">
-        <span>${escapeHtml(state.lang === "en" ? "Simulation" : "アニメーション")}</span>
-        <small>${escapeHtml(state.playing ? d.pauseBtn : d.playBtn)}</small>
-      </button>
 
       <details class="debug-details">
         <summary>${escapeHtml(d.qaGroupTitle)}</summary>
@@ -524,12 +525,13 @@ export function renderCard(
   }
 
   el.innerHTML = `
+    <div class="card-eyebrow">${escapeHtml(d.selectedEyebrow)}</div>
     <div class="card-head">
       <div>
-        <h3 class="card-title">${escapeHtml(title)}</h3>
+        <h2 class="card-title">${escapeHtml(title)}</h2>
         ${sub && sub !== title ? `<p class="card-sub">${escapeHtml(sub)}</p>` : ""}
       </div>
-      <button type="button" class="card-close" id="btn-card-close" aria-label="Close">✕</button>
+      <button type="button" class="card-close" id="btn-card-close" aria-label="Close">×</button>
     </div>
     ${badgeHtml}
     ${bodyNote}
@@ -565,9 +567,6 @@ export function renderStatus(
   }
 
   const sun = computeYokohamaSun(sunDate);
-  const phaseEmoji =
-    sun.phase === "night" ? "🌙" : sun.phase === "twilight" ? "🌆" : sun.phase === "golden" ? "🌇" : "☀️";
-
   const dotCls =
     !feed || feed.feedHealth === "ok"
       ? ""
@@ -577,14 +576,24 @@ export function renderStatus(
 
   const busCount = state.showBuses ? (feed?.vehicles.length ?? 0) : 0;
   const boatCount = state.showBoats ? (feed?.portCalls.length ?? 0) : 0;
-  const tvSuffix = state.tvMode ? ` · 📺 ${escapeHtml(d.tvTourLabel)}` : "";
+  const skyText =
+    state.lang === "en"
+      ? `${sun.phase} sky`
+      : sun.phase === "night"
+        ? "夜空"
+        : sun.phase === "twilight"
+          ? "夕暮れ"
+          : sun.phase === "golden"
+            ? "茜色の光"
+            : "晴天";
+  const tvSuffix = state.tvMode ? ` · ${escapeHtml(d.tvTourLabel)}` : "";
 
   const text =
     state.lang === "en"
-      ? `${phaseEmoji} ${jstText} JST · ${busCount} bus · ${boatCount} ship${tvSuffix}`
-      : `${phaseEmoji} ${jstText} JST · バス ${busCount} · 客船 ${boatCount}${tvSuffix}`;
+      ? `${busCount} buses · ${boatCount} ships${tvSuffix}`
+      : `バス ${busCount} · 客船 ${boatCount}${tvSuffix}`;
 
-  el.innerHTML = `<span class="status-dot ${dotCls}" aria-hidden="true"></span><span>${text}</span>`;
+  el.innerHTML = `<span class="status-when">${jstText} JST · ${escapeHtml(skyText)}</span><span><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>${text}</span>`;
 }
 
 export function renderSq(
@@ -599,8 +608,8 @@ export function renderSq(
     <button type="button" id="btn-theme" title="${isDark ? "Light theme" : "Dark theme"}" aria-label="Toggle theme">
       ${
         isDark
-          ? `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41" /></svg>`
-          : `<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>`
+          ? `<svg viewBox="0 0 24 24" class="i-sun"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"/></svg>`
+          : `<svg viewBox="0 0 24 24" class="i-moon"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>`
       }
     </button>
     <button type="button" id="btn-zoom-in" title="Zoom in (+)" aria-label="Zoom in">
@@ -610,15 +619,15 @@ export function renderSq(
       <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
     </button>
     <button type="button" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
-      <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
     </button>
     <button type="button" class="compass" id="btn-compass" title="${escapeHtml(d.compassTip)}" aria-label="${escapeHtml(d.compassTip)}">
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <g transform="rotate(125.3 16 16)">
-          <polygon class="n" points="16,3 20,16 12,16" />
-          <polygon class="s" points="16,29 20,16 12,16" />
+      <svg viewBox="0 0 44 44" aria-hidden="true">
+        <g transform="rotate(45 22 22)">
+          <path class="n" d="M22 10l4 12h-8z" />
+          <path class="s" d="M22 34l-4-12h8z" />
         </g>
-        <text class="lbl" x="23" y="21">N</text>
+        <text class="lbl" x="31.5" y="12.5">N</text>
       </svg>
     </button>
   `;
@@ -652,24 +661,24 @@ export function renderCreditAndAboutModal(
   const apiNote =
     state.lang === "en"
       ? "OpenStreetMap API v0.6 / ODbL geometry and POIs work with zero API registration. Google Maps place links use standard Search deep-links (no key needed). Optional live Yokohama bus feeds use ODPT_ACCESS_TOKEN in collector/."
-      : "OpenStreetMap API v0.6 (ODbL) の建物形状・道路・海岸線・349件のPOIは API キー登録なしで取得・反映しています。Google マップへのリンクは標準の検索ディープリンクを使用（キー不要）、横浜市営バスの実測連携のみ ODPT API トークン登録が任意で必要です。";
+      : "OpenStreetMap API v0.6 (ODbL) の建物形状・道路・海岸線・POIは API キー登録なしで取得・反映しています。Google マップへのリンクは標準の検索ディープリンクを使用（キー不要）、横浜市営バスの実測連携のみ ODPT API トークン登録が任意で必要です。";
 
   const tileMethodNote =
     state.lang === "en"
-      ? "Built tile-by-tile (Small SF method): a pixel-locked 45° orthographic 3D base in EPSG:6677 is redrawn block-by-block into Ligne-Claire illustration, composited with the strict 3D water mask, and stitched along 14px DP seams — starting with Hero Tile #1 (Shinko Waterfront) before expanding outward."
-      : "Small SF 手法に倣ったタイル制作パイプライン：EPSG:6677 の45度正投影3D基準レンダーをブロック単位で Ligne-Claire 風イラストへ再描画し、3D 海面マスク合成（架空の島防止）と DP 14px 継ぎ目ブレンドで結合しています。まず新港中心タイル（Hero Tile #1）から仕上げて順次拡大中です。";
+      ? "Built tile-by-tile (Small SF method): a pixel-locked 45° orthographic base in EPSG:6677 is redrawn block-by-block into Ligne-Claire illustration, composited with the strict 3D water mask, and stitched along 14px DP seams across 23 Yokohama tiles."
+      : "Small SF 手法に倣ったタイル制作パイプライン：EPSG:6677 の45度正投影基準レンダーを全23ブロック単位で Ligne-Claire 風イラストへ再描画し、3D 海面マスク合成と DP 14px 継ぎ目ブレンドで 15,488×5,888 px の1枚絵に統合しています。";
 
   modalEl.innerHTML = `
     <div class="modal-card" role="dialog" aria-modal="true" aria-label="${escapeHtml(d.aboutTitle)}">
-      <div class="card-head">
-        <h2 style="margin:0;font-size:17px;">${escapeHtml(d.aboutTitle)}</h2>
-        <button type="button" class="card-close" id="btn-close-about" aria-label="Close">✕</button>
+      <div class="card-head" style="position:relative;">
+        <h2 style="margin:0;font-size:22px;">${escapeHtml(d.aboutTitle)}</h2>
+        <button type="button" class="card-close" id="btn-close-about" aria-label="Close">×</button>
       </div>
       <p style="margin:10px 0 8px;line-height:1.55;">${escapeHtml(d.aboutLead)}</p>
       <p class="card-sub" style="margin:0 0 8px;line-height:1.5;">${escapeHtml(tileMethodNote)}</p>
       <p class="card-sub" style="margin:0 0 12px;line-height:1.5;">${escapeHtml(apiNote)}</p>
-      <h3 style="margin:12px 0 6px;font-size:13px;">${escapeHtml(d.qaSummary)} (${escapeHtml(qa.releaseId)})</h3>
-      <p style="font-family:var(--font-mono);font-size:11.5px;margin:0 0 12px;color:var(--text-muted);">
+      <h3 style="margin:12px 0 6px;font-family:var(--u-sans);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:var(--u-coral);">${escapeHtml(d.qaSummary)} (${escapeHtml(qa.releaseId)})</h3>
+      <p style="font-family:var(--font-mono);font-size:11.5px;margin:0 0 12px;color:var(--u-mute);">
         passed=${qa.passed} | GCPs=${qa.gcpChecks.length} | maxDisp=${qa.maxGcpDisplacementPx}px (&le;${qa.gcpThresholdPx}px) |
         voidPixels=${qa.waterIntegrity.voidPixels ?? 0} | features=${bundle.features.length} | POIs=${bundle.pois.length}
       </p>
@@ -679,7 +688,7 @@ export function renderCreditAndAboutModal(
           (c) => `
         <div class="credit-row">
           <strong>${escapeHtml(c.dataset)}</strong> — ${escapeHtml(c.publisher)} (${escapeHtml(c.license)})<br />
-          <small style="color:var(--text-muted);">
+          <small style="color:var(--u-mute);">
             Version: ${escapeHtml(c.version)} · Retrieved: ${escapeHtml(c.retrievedAt)}<br />
             ${escapeHtml(c.modifications)}
           </small>

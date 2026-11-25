@@ -47,6 +47,7 @@ const TV_STOP_IDS = [
 async function bootstrap(): Promise<void> {
   const barEl = document.getElementById("bar")!;
   const dropEl = document.getElementById("drop")!;
+  const toastEl = document.getElementById("toast");
   const cardEl = document.getElementById("card")!;
   const statusEl = document.getElementById("status")!;
   const sqEl = document.getElementById("sq")!;
@@ -71,6 +72,7 @@ async function bootstrap(): Promise<void> {
     bundle.camera,
     window.location.search,
     prefersReducedMotion,
+    { width: window.innerWidth, height: window.innerHeight },
   );
 
   let currentSnapshot = await fetchSnapshotForPreset(
@@ -132,7 +134,7 @@ async function bootstrap(): Promise<void> {
     const lm = tvLandmarks[tvIndex % tvLandmarks.length]!;
     tvIndex++;
     state.selected = { kind: "landmark", landmark: lm };
-    mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM, 2.75);
+    mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM);
     refreshUi();
   };
 
@@ -146,6 +148,21 @@ async function bootstrap(): Promise<void> {
     resolvedFeed = resolveVehiclesForFrame(currentSnapshot, preset, state.simTimeSec);
     mapViewer.updateState(state, resolvedFeed);
     refreshUi();
+  };
+
+  let toastTimer = 0;
+  const showToast = (label: string) => {
+    if (!toastEl) return;
+    window.clearTimeout(toastTimer);
+    toastEl.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>${label}</span>`;
+    toastEl.hidden = false;
+    toastEl.classList.remove("gone");
+    toastTimer = window.setTimeout(() => {
+      toastEl.classList.add("gone");
+      window.setTimeout(() => {
+        if (toastEl.classList.contains("gone")) toastEl.hidden = true;
+      }, 220);
+    }, 1800);
   };
 
   const handlers: UiHandlers = {
@@ -175,11 +192,12 @@ async function bootstrap(): Promise<void> {
       if (navigator.clipboard?.writeText) {
         try {
           await navigator.clipboard.writeText(url);
-          return true;
         } catch {
-          return false;
+          showToast(state.lang === "en" ? "URL updated in address bar" : "URLをアドレスバーに反映しました");
+          return true;
         }
       }
+      showToast(state.lang === "en" ? "Link copied to clipboard" : "この視点のURLをコピーしました");
       return true;
     },
     onToggleAbout: (open: boolean) => {
@@ -248,21 +266,21 @@ async function bootstrap(): Promise<void> {
       if (!lm) return;
       state.selected = { kind: "landmark", landmark: lm };
       state.activeTab = null;
-      mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM, 2.8);
+      mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM);
       refreshUi();
     },
     onSelectPoi: (poi: PoiRecord) => {
       stopTv(false);
       state.selected = { kind: "poi", poi };
       state.activeTab = null;
-      mapViewer.panToLonLat(poi.lon, poi.lat, poi.elevationM, 3.0);
+      mapViewer.panToLonLat(poi.lon, poi.lat, poi.elevationM);
       refreshUi();
     },
     onSelectPortCall: (pc: PortCallRecord) => {
       stopTv(false);
       state.selected = { kind: "portcall", portCall: pc };
       state.activeTab = null;
-      mapViewer.panToLonLat(pc.lon, pc.lat, 3.5, 2.5);
+      mapViewer.panToLonLat(pc.lon, pc.lat, 3.5);
       refreshUi();
     },
     onClearSelection: () => {

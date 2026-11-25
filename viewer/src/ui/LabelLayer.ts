@@ -23,11 +23,11 @@ function estimateLabelSize(label: string, tier: 1 | 2 | 3): { w: number; h: numb
     if (label.charCodeAt(i) < 128) asciiCount++;
   }
   const wideCount = label.length - asciiCount;
-  const charPx = tier === 1 ? 11.5 : 10.8;
-  const textPx = wideCount * charPx + asciiCount * 6.8;
+  const charPx = tier === 1 ? 14.5 : 13.5;
+  const textPx = wideCount * charPx + asciiCount * 7.8;
   return {
-    w: Math.ceil(textPx + 18),
-    h: tier === 1 ? 24 : 22,
+    w: Math.ceil(textPx + 20),
+    h: tier === 1 ? 30 : 28,
   };
 }
 
@@ -115,18 +115,38 @@ export class LabelLayer {
     }
     this.lastRenderKey = renderKey;
 
-    const maxTier = bounds.zoom >= 3.0 ? 3 : bounds.zoom >= 1.35 ? 2 : 1;
-    const maxLabels = bounds.zoom >= 2.8 ? 30 : bounds.zoom >= 1.5 ? 20 : 12;
+    const imgPxPerCssPx = spanX / bounds.widthCssPx;
+    const isNarrow = bounds.widthCssPx <= 700;
+    const maxTier = imgPxPerCssPx > 4.5 ? 1 : imgPxPerCssPx > 1.8 ? 2 : 3;
+    const maxLabels =
+      maxTier === 1
+        ? isNarrow
+          ? 10
+          : 14
+        : maxTier === 2
+          ? isNarrow
+            ? 14
+            : 22
+          : isNarrow
+            ? 18
+            : 28;
     const items = this.ensureProjected(bundle, state.lang);
 
     const placedBoxes: Array<{ l: number; r: number; t: number; b: number }> = [
-      // Avoid overlapping the top-left #bar pill
-      { l: 0, r: 440, t: 0, b: 64 },
-      // Avoid bottom-right #sq stack
+      // Avoid top-left #bar pill
+      { l: 0, r: Math.min(bounds.widthCssPx - 64, 500), t: 0, b: 68 },
+      // Avoid top-right #sq stack
       {
-        l: Math.max(0, bounds.widthCssPx - 68),
+        l: Math.max(0, bounds.widthCssPx - 72),
         r: bounds.widthCssPx,
-        t: Math.max(0, bounds.heightCssPx - 280),
+        t: 0,
+        b: 290,
+      },
+      // Avoid bottom #status bar
+      {
+        l: 0,
+        r: isNarrow ? bounds.widthCssPx : Math.min(bounds.widthCssPx, 620),
+        t: Math.max(0, bounds.heightCssPx - 68),
         b: bounds.heightCssPx,
       },
     ];
@@ -143,10 +163,10 @@ export class LabelLayer {
       const cssX = ((item.px - bounds.topLeft.x) / spanX) * bounds.widthCssPx;
       const cssY = ((item.py - bounds.topLeft.y) / spanY) * bounds.heightCssPx;
       if (
-        cssX < 24 ||
-        cssX > bounds.widthCssPx - 24 ||
-        cssY < 20 ||
-        cssY > bounds.heightCssPx - 28
+        cssX < 28 ||
+        cssX > bounds.widthCssPx - 28 ||
+        cssY < 32 ||
+        cssY > bounds.heightCssPx - 30
       ) {
         continue;
       }
@@ -156,8 +176,8 @@ export class LabelLayer {
       const box = {
         l: cssX - size.w * 0.5 - pad,
         r: cssX + size.w * 0.5 + pad,
-        t: cssY - size.h * 0.5 - pad,
-        b: cssY + size.h * 0.5 + pad,
+        t: cssY - size.h - 8 - pad,
+        b: cssY + pad,
       };
 
       let collides = false;
@@ -172,7 +192,8 @@ export class LabelLayer {
       placedBoxes.push(box);
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = `map-label tier-${item.poi.tier}${isSelected ? " active" : ""}`;
+      const isPark = item.poi.category === "park";
+      btn.className = `map-label tier-${item.poi.tier}${isPark ? " park" : ""}${isSelected ? " active" : ""}`;
       btn.style.left = `${cssX.toFixed(1)}px`;
       btn.style.top = `${cssY.toFixed(1)}px`;
       btn.textContent = item.label;

@@ -54,6 +54,7 @@ export interface I18nDict {
     schedule: string;
   };
   openGoogleMaps: string;
+  selectedEyebrow: string;
   aboutTitle: string;
   aboutLead: string;
   qaSummary: string;
@@ -95,7 +96,7 @@ const JA: I18nDict = {
   qaGroupTitle: "検証オーバーレイ (開発・検収用)",
   toggleDepth: "奥行きマップ可視化",
   toggleXray: "遮蔽透視 (X-Ray)",
-  toggleTileGrid: "2×2タイル境界 (128px重なり)",
+  toggleTileGrid: "タイル境界 (128px重なり)",
   toggleGcps: "地上基準点 (GCP 8点)",
   toggleDeckPoint: "歩道橋デッキ上検証点 (+6.9m)",
   toggleReducedMotion: "動きを抑える",
@@ -121,12 +122,13 @@ const JA: I18nDict = {
     schedule: "予定時刻",
   },
   openGoogleMaps: "Google マップで開く ↗",
+  selectedEyebrow: "選択中",
   aboutTitle: "Small Yokohama · スモール横浜について",
   aboutLead:
     "横浜・新港〜みなとみらい〜大さん橋の街並みを正投影45度カメラで描き、同じ視点の16-bit奥行きマップと重ねることで、青い連節バス（ベイサイドブルー）が歩道橋や赤レンガ倉庫の裏へ自然に隠れる立体ミニチュア地図です。",
   qaSummary: "自動 QA 検収結果",
   tvTourLabel: "TVツアー巡回中",
-  compassTip: "北の方向（クリックで初期視点へ）",
+  compassTip: "北の方向（右上 · クリックで初期視点へ）",
 };
 
 const EN: I18nDict = {
@@ -163,7 +165,7 @@ const EN: I18nDict = {
   qaGroupTitle: "Verification overlays",
   toggleDepth: "Depth map overlay",
   toggleXray: "X-Ray occluded hull",
-  toggleTileGrid: "2x2 tile seams (128px)",
+  toggleTileGrid: "Tile seams (128px)",
   toggleGcps: "Ground control points (8)",
   toggleDeckPoint: "Deck test point (+6.9m)",
   toggleReducedMotion: "Reduced motion",
@@ -189,12 +191,13 @@ const EN: I18nDict = {
     schedule: "Schedule",
   },
   openGoogleMaps: "Open in Google Maps ↗",
+  selectedEyebrow: "Selected",
   aboutTitle: "About Small Yokohama",
   aboutLead:
     "An illustrated 45-degree orthographic miniature of Yokohama's Shinko, Minato Mirai, and Osanbashi waterfront. A shared 16-bit depth pyramid lets articulated Bayside Blue buses glide behind Red Brick Warehouses and underneath Circle Walk.",
   qaSummary: "Automated Pilot QA",
   tvTourLabel: "TV tour active",
-  compassTip: "North (click to reset view)",
+  compassTip: "North (upper-right · click to reset view)",
 };
 
 export function getDict(lang: Lang): I18nDict {

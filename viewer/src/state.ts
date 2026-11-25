@@ -7,6 +7,11 @@ import type {
   VehicleRecord,
 } from "@small-yokohama/core";
 import type { Lang } from "./i18n.js";
+import {
+  RED_BRICK_CENTER_IMG,
+  computeDefaultFullMapZoom,
+  isFullYokohamaCamera,
+} from "./viewer/cameraMath.js";
 
 export type MapVariant = "illustrated" | "plain";
 export type UiTheme = "light" | "dark";
@@ -77,6 +82,7 @@ export function createInitialViewerState(
   camera: CameraManifest,
   search: string,
   prefersReducedMotion = false,
+  viewport: { width: number; height: number } = { width: 1280, height: 800 },
 ): ViewerState {
   const params = new URLSearchParams(search);
   const langParam = params.get("lang");
@@ -97,10 +103,11 @@ export function createInitialViewerState(
   const rawZ = Number(params.get("z"));
   const rawHour = params.get("sun");
 
-  const isFullMap = camera.imageWidthPx > 5000;
-  const defaultCenterX = isFullMap ? camera.imageOriginPx.x + 200 : camera.imageWidthPx * 0.66;
-  const defaultCenterY = isFullMap ? camera.imageOriginPx.y - 300 : camera.imageHeightPx * 0.59;
+  const isFullMap = isFullYokohamaCamera(camera);
+  const defaultCenterX = isFullMap ? RED_BRICK_CENTER_IMG.x : camera.imageWidthPx * 0.66;
+  const defaultCenterY = isFullMap ? RED_BRICK_CENTER_IMG.y : camera.imageHeightPx * 0.59;
   const minZoom = isFullMap ? 0.35 : 0.6;
+  const maxZoom = isFullMap ? 64 : 16;
 
   const centerImgX = params.has("x")
     ? clampNumber(rawX, 0, camera.imageWidthPx)
@@ -108,7 +115,9 @@ export function createInitialViewerState(
   const centerImgY = params.has("y")
     ? clampNumber(rawY, 0, camera.imageHeightPx)
     : defaultCenterY;
-  const zoom = params.has("z") ? clampNumber(rawZ, minZoom, 16) : 2.25;
+  const zoom = params.has("z")
+    ? clampNumber(rawZ, minZoom, maxZoom)
+    : computeDefaultFullMapZoom(camera, viewport.width, viewport.height);
 
   let sunHourJst: number | null = 15.5;
   if (rawHour === "live") {

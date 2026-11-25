@@ -2,8 +2,11 @@
 <html lang="ja" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Small Yokohama · スモール横浜</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600&family=Shippori+Mincho:wght@500;600&display=swap" />
   </head>
   <body>
     <main id="map-stage" class="map-stage" aria-label="Interactive illustrated map of Yokohama waterfront">
@@ -14,6 +17,7 @@
 
     <header id="bar" class="bar"></header>
     <div id="drop" class="drop" hidden></div>
+    <div id="toast" class="toast gone" role="status" aria-live="polite" hidden></div>
     <div id="card" class="card" hidden></div>
     <div id="status" class="status" aria-live="polite"></div>
     <div id="sq" class="sq"></div>

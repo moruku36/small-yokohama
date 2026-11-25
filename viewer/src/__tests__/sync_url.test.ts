@@ -8,6 +8,14 @@ import {
   createInitialViewerState,
   serializeShareUrl,
 } from "../state.js";
+import {
+  RED_BRICK_CENTER_IMG,
+  computeDefaultFullMapZoom,
+  computeFullMapMinZoom,
+  computePinchZoom,
+  computeWheelZoomFactor,
+} from "../viewer/cameraMath.js";
+import { createFullYokohamaCamera } from "@small-yokohama/core";
 
 describe("Viewport overlay synchronization & bounded share URLs", () => {
   const cam = createShinkoPilotCamera();
@@ -73,5 +81,42 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     expect(clamped.cameraView.centerImgX).toBe(0);
     expect(clamped.cameraView.centerImgY).toBe(cam.imageHeightPx);
     expect(clamped.cameraView.zoom).toBe(16);
+  });
+
+  it("keeps mobile pinch-to-zoom direction non-inverted and frames Red Brick cleanly", () => {
+    // Spreading fingers increases distance -> zoom increases; pinching closer -> zoom decreases
+    expect(computePinchZoom(10, 100, 150, 2, 48)).toBeCloseTo(15, 6);
+    expect(computePinchZoom(10, 150, 100, 2, 48)).toBeCloseTo(6.6667, 3);
+    // Clamps extreme frame jumps cleanly
+    expect(computePinchZoom(40, 100, 250, 2, 48)).toBe(48);
+    expect(computePinchZoom(3, 250, 100, 2, 48)).toBe(2);
+
+    // Trackpad pinch wheel (ctrlKey + negative deltaY => zoom IN > 1; positive deltaY => zoom OUT < 1)
+    expect(computeWheelZoomFactor(-40, 0, true)).toBeGreaterThan(1);
+    expect(computeWheelZoomFactor(40, 0, true)).toBeLessThan(1);
+
+    const fullCam = createFullYokohamaCamera();
+    const mobileMin = computeFullMapMinZoom(fullCam, 390, 844);
+    const mobileInit = computeDefaultFullMapZoom(fullCam, 390, 844);
+    expect(mobileInit).toBeGreaterThan(mobileMin);
+    expect(mobileInit).toBeGreaterThan(10);
+    const mobileVisibleH =
+      (fullCam.imageWidthPx / mobileInit) * (844 / 390);
+    expect(mobileVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);
+
+    const desktopMin = computeFullMapMinZoom(fullCam, 1440, 900);
+    const desktopInit = computeDefaultFullMapZoom(fullCam, 1440, 900);
+    expect(desktopInit).toBeGreaterThan(desktopMin);
+    const desktopVisibleH =
+      (fullCam.imageWidthPx / desktopInit) * (900 / 1440);
+    expect(desktopVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);
+
+    const mobileState = createInitialViewerState(fullCam, "", false, {
+      width: 390,
+      height: 844,
+    });
+    expect(mobileState.cameraView.centerImgX).toBe(RED_BRICK_CENTER_IMG.x);
+    expect(mobileState.cameraView.centerImgY).toBe(RED_BRICK_CENTER_IMG.y);
+    expect(mobileState.cameraView.zoom).toBeCloseTo(mobileInit, 6);
   });
 });
