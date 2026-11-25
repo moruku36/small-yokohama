@@ -104,6 +104,11 @@ export interface I18nDict {
   fullscreenTip: string;
   closeLabel: string;
   creditAbout: string;
+  soundOnTip: string;
+  soundOffTip: string;
+  followLabel: string;
+  followingLabel: string;
+  loadingCity: string;
 }
 
 const JA: I18nDict = {
@@ -225,6 +230,11 @@ const JA: I18nDict = {
   fullscreenTip: "全画面表示",
   closeLabel: "閉じる",
   creditAbout: "概要",
+  soundOnTip: "港の音をオンにする",
+  soundOffTip: "港の音をオフにする",
+  followLabel: "追いかける",
+  followingLabel: "追跡中 · 地図を動かすと解除",
+  loadingCity: "街を読み込んでいます…",
 };
 
 const EN: I18nDict = {
@@ -346,6 +356,11 @@ const EN: I18nDict = {
   fullscreenTip: "Full screen",
   closeLabel: "Close",
   creditAbout: "About",
+  soundOnTip: "Sound on",
+  soundOffTip: "Sound off",
+  followLabel: "Follow",
+  followingLabel: "Following · drag the map to stop",
+  loadingCity: "Loading the city…",
 };
 
 export function getDict(lang: Lang): I18nDict {

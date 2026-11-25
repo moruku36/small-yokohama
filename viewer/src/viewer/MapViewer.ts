@@ -41,6 +41,13 @@ import {
   type SkyGrade,
 } from "./skyLighting.js";
 
+export type MapPick =
+  | { kind: "vehicle"; vehicle: ResolvedVehicle }
+  | { kind: "train"; train: ResolvedTrain }
+  | { kind: "portcall"; portCall: AnimatedPortCall }
+  | { kind: "landmark"; landmark: Landmark }
+  | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number };
+
 export interface MapViewerCallbacks {
   onSelectVehicle: (rv: ResolvedVehicle) => void;
   onSelectTrain: (tr: ResolvedTrain) => void;
@@ -51,6 +58,10 @@ export interface MapViewerCallbacks {
   onViewChanged: (centerImgX: number, centerImgY: number, zoom: number) => void;
   onTogglePlay: () => void;
   onUserInteract?: () => void;
+  /** The visitor started dragging the map (not a click, not a zoom): ends following. */
+  onUserPan?: () => void;
+  /** Desktop hover: what is under the cursor (null when nothing is), in client coordinates. */
+  onHover?: (pick: MapPick | null, clientX: number, clientY: number) => void;
 }
 
 const UI_CHROME_SELECTOR = "#bar, #drop, #card, #sq, #status, #minimap, #about-modal, #credit";
@@ -607,7 +618,9 @@ export class MapViewer {
         }
         const dx = t.clientX - lastTouchX;
         const dy = t.clientY - lastTouchY;
+        const wasStill = touchTotalMove < 10;
         touchTotalMove += Math.hypot(dx, dy);
+        if (wasStill && touchTotalMove >= 10) this.callbacks.onUserPan?.();
         panPx(-dx, -dy);
         pushSample(dx, dy);
         lastTouchX = t.clientX;
@@ -702,15 +715,52 @@ export class MapViewer {
       stopPhysics();
       cam.samples = [];
       this.callbacks.onUserInteract?.();
+      this.callbacks.onHover?.(null, 0, 0);
+    };
+
+    let hoverRaf = 0;
+    let hoverX = 0;
+    let hoverY = 0;
+    let hoverTarget: EventTarget | null = null;
+    const runHover = () => {
+      hoverRaf = 0;
+      if (!this.callbacks.onHover || activePointerId !== null) return;
+      if (
+        isUiChrome(hoverTarget) ||
+        (hoverTarget instanceof Element && hoverTarget.closest(PIN_SELECTOR))
+      ) {
+        this.inputRoot.classList.remove("is-pointing");
+        this.callbacks.onHover(null, hoverX, hoverY);
+        return;
+      }
+      const rect = this.osdElement.getBoundingClientRect();
+      const pick = this.pickAt(new OpenSeadragon.Point(hoverX - rect.left, hoverY - rect.top));
+      this.inputRoot.classList.toggle("is-pointing", pick !== null);
+      this.callbacks.onHover(pick, hoverX, hoverY);
+    };
+    const onHoverMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || activePointerId !== null) return;
+      hoverX = e.clientX;
+      hoverY = e.clientY;
+      hoverTarget = e.target;
+      if (!hoverRaf) hoverRaf = window.requestAnimationFrame(runHover);
+    };
+    const onHoverLeave = () => {
+      if (hoverRaf) window.cancelAnimationFrame(hoverRaf);
+      hoverRaf = 0;
+      this.inputRoot.classList.remove("is-pointing");
+      this.callbacks.onHover?.(null, 0, 0);
     };
 
     const onPointerMove = (e: PointerEvent) => {
       if (activePointerId === null || e.pointerId !== activePointerId) return;
       const dx = e.clientX - lastMouseX;
       const dy = e.clientY - lastMouseY;
+      const wasStill = mouseMoved < 3;
       mouseMoved += Math.hypot(dx, dy);
       if (mouseMoved >= 3) {
         this.inputRoot.classList.add("is-dragging");
+        if (wasStill) this.callbacks.onUserPan?.();
       }
       panPx(-dx, -dy);
       pushSample(dx, dy);
@@ -773,6 +823,8 @@ export class MapViewer {
     };
 
     this.inputRoot.addEventListener("pointerdown", onPointerDown);
+    this.inputRoot.addEventListener("pointermove", onHoverMove);
+    this.inputRoot.addEventListener("pointerleave", onHoverLeave);
     this.inputRoot.addEventListener("click", onLabelCaptureClick, true);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
@@ -854,6 +906,9 @@ export class MapViewer {
       this.inputRoot.removeEventListener("touchend", onTouchEnd);
       this.inputRoot.removeEventListener("touchcancel", onTouchCancel);
       this.inputRoot.removeEventListener("pointerdown", onPointerDown);
+      this.inputRoot.removeEventListener("pointermove", onHoverMove);
+      this.inputRoot.removeEventListener("pointerleave", onHoverLeave);
+      if (hoverRaf) window.cancelAnimationFrame(hoverRaf);
       this.inputRoot.removeEventListener("click", onLabelCaptureClick, true);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
@@ -1142,7 +1197,33 @@ export class MapViewer {
   }
 
   private handleClick(viewerPos: OpenSeadragon.Point): void {
-    if (!this.osd.viewport) return;
+    const pick = this.pickAt(viewerPos);
+    if (!pick) {
+      this.callbacks.onClearSelection();
+      return;
+    }
+    switch (pick.kind) {
+      case "vehicle":
+        this.callbacks.onSelectVehicle(pick.vehicle);
+        return;
+      case "train":
+        this.callbacks.onSelectTrain(pick.train);
+        return;
+      case "portcall":
+        this.callbacks.onSelectPortCall(pick.portCall);
+        return;
+      case "landmark":
+        this.callbacks.onSelectLandmark(pick.landmark);
+        return;
+      case "feature":
+        this.callbacks.onSelectFeature(pick.feature, pick.lon, pick.lat);
+        return;
+    }
+  }
+
+  /** What is drawn at a point of the viewer element: moving things first, then the building under it. */
+  pickAt(viewerPos: OpenSeadragon.Point): MapPick | null {
+    if (!this.osd.viewport) return null;
     const imgPt = this.osd.viewport.viewerElementToImageCoordinates(viewerPos);
 
     // 1. Check vehicles first
@@ -1156,8 +1237,7 @@ export class MapViewer {
           new OpenSeadragon.Point(vImg.px, vImg.py),
         );
         if (Math.hypot(viewerPos.x - vScreen.x, viewerPos.y - vScreen.y) <= 28) {
-          this.callbacks.onSelectVehicle(rv);
-          return;
+          return { kind: "vehicle", vehicle: rv };
         }
       }
     }
@@ -1174,8 +1254,7 @@ export class MapViewer {
             new OpenSeadragon.Point(cImg.px, cImg.py),
           );
           if (Math.hypot(viewerPos.x - cScreen.x, viewerPos.y - cScreen.y) <= 24) {
-            this.callbacks.onSelectTrain(tr);
-            return;
+            return { kind: "train", train: tr };
           }
         }
       }
@@ -1193,8 +1272,7 @@ export class MapViewer {
         );
         const hitRadius = Math.max(24, Math.min(44, (pc.lengthM ?? 24) * 0.45));
         if (Math.hypot(viewerPos.x - pcScreen.x, viewerPos.y - pcScreen.y) <= hitRadius) {
-          this.callbacks.onSelectPortCall(pc);
-          return;
+          return { kind: "portcall", portCall: pc };
         }
       }
     }
@@ -1204,8 +1282,7 @@ export class MapViewer {
     if (fid !== null) {
       const lm = this.bundle.landmarks.find((l) => l.featureId === fid);
       if (lm) {
-        this.callbacks.onSelectLandmark(lm);
-        return;
+        return { kind: "landmark", landmark: lm };
       }
       const feat = this.bundle.featureById.get(fid);
       if (
@@ -1227,12 +1304,95 @@ export class MapViewer {
           lon = wgs.lon;
           lat = wgs.lat;
         }
-        this.callbacks.onSelectFeature(feat, lon, lat);
-        return;
+        return { kind: "feature", feature: feat, lon, lat };
       }
     }
 
-    this.callbacks.onClearSelection();
+    return null;
+  }
+
+  /**
+   * Keeps a moving thing in the middle of the screen. Called every frame while following:
+   * eases the centre toward it so live position jumps glide instead of snapping.
+   */
+  followLonLat(lon: number, lat: number, elevM: number, dtSec: number): void {
+    const vp = this.osd.viewport;
+    if (!vp) return;
+    const img = localToImage(this.camera, wgs84ToLocal(this.camera, lon, lat, elevM));
+    const target = vp.imageToViewportCoordinates(img.px, img.py);
+    const c = vp.getCenter(true);
+    const k = this.state.reducedMotion ? 1 : 1 - Math.pow(1 - 0.12, Math.max(0, dtSec) * 60);
+    vp.panTo(
+      new OpenSeadragon.Point(c.x + (target.x - c.x) * k, c.y + (target.y - c.y) * k),
+      true,
+    );
+    if (isFullYokohamaCamera(this.camera)) vp.applyConstraints(true);
+  }
+
+  /**
+   * The opening: start high over the city and come down to the starting view, while
+   * `onProgress` (0 → 1) lets the cloud layer part in step. Resolves once landed; a visitor
+   * who grabs, scrolls or taps the map ends the fall where it is.
+   */
+  playIntro(durationMs: number, onProgress: (t: number) => void): Promise<void> {
+    const vp = this.osd.viewport;
+    if (!vp || this.state.reducedMotion) {
+      onProgress(1);
+      return Promise.resolve();
+    }
+    const targetZoom = vp.getZoom(true);
+    const targetCenter = vp.getCenter(true);
+    const startZoom = Math.max(vp.getMinZoom(), targetZoom / 7);
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3);
+    const isFull = isFullYokohamaCamera(this.camera);
+    return new Promise((resolve) => {
+      let start = 0;
+      let cancelled = false;
+      const cancel = () => {
+        cancelled = true;
+      };
+      const unbind = () => {
+        this.inputRoot.removeEventListener("pointerdown", cancel);
+        this.inputRoot.removeEventListener("touchstart", cancel);
+        this.inputRoot.removeEventListener("wheel", cancel);
+      };
+      this.inputRoot.addEventListener("pointerdown", cancel);
+      this.inputRoot.addEventListener("touchstart", cancel, { passive: true });
+      this.inputRoot.addEventListener("wheel", cancel, { passive: true });
+      const frame = (now: number) => {
+        if (this.isDestroyed) {
+          unbind();
+          resolve();
+          return;
+        }
+        if (!start) start = now;
+        const t = cancelled ? 1 : Math.min(1, (now - start) / durationMs);
+        if (!cancelled) {
+          vp.zoomTo(startZoom * Math.pow(targetZoom / startZoom, ease(t)), undefined, true);
+          vp.panTo(targetCenter, true);
+          if (isFull) vp.applyConstraints(true);
+        }
+        onProgress(t);
+        if (t < 1) {
+          window.requestAnimationFrame(frame);
+        } else {
+          unbind();
+          resolve();
+        }
+      };
+      vp.zoomTo(startZoom, undefined, true);
+      vp.panTo(targetCenter, true);
+      if (isFull) vp.applyConstraints(true);
+      window.requestAnimationFrame(frame);
+    });
+  }
+
+  /** Resolves once the drawing has opened (at once if it already has). */
+  whenOpen(): Promise<void> {
+    if (this.osd.world.getItemCount() > 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.osd.addOnceHandler("open", () => resolve());
+    });
   }
 
   destroy(): void {

@@ -20,6 +20,12 @@ import {
   getSunDateForHourJst,
   isNightAltitude,
 } from "./viewer/skyLighting.js";
+import {
+  cameraViewToGeoView,
+  formatAtParam,
+  geoViewToCameraView,
+  parseAtParam,
+} from "./viewer/geoView.js";
 
 export type MapVariant = "illustrated" | "plain";
 export type UiTheme = "light" | "dark";
@@ -67,6 +73,12 @@ export interface ViewerState {
   searchQuery: string;
   tvMode: boolean;
   aboutOpen: boolean;
+  /** Ambient harbour sound (off until the visitor turns it on: browsers block autoplay). */
+  soundOn: boolean;
+  /** Keep the camera on the selected bus, train or ship as it moves. */
+  following: boolean;
+  /** Play the drop-through-the-clouds opening (?intro=0 skips it). */
+  introEnabled: boolean;
   selected: SelectedEntity;
   cameraView: {
     centerImgX: number;
@@ -124,15 +136,25 @@ export function createInitialViewerState(
   const minZoom = isFullMap ? 0.35 : 0.6;
   const maxZoom = isFullMap ? 96 : 16;
 
-  const centerImgX = params.has("x")
-    ? clampNumber(rawX, 0, camera.imageWidthPx)
-    : defaultCenterX;
-  const centerImgY = params.has("y")
-    ? clampNumber(rawY, 0, camera.imageHeightPx)
-    : defaultCenterY;
-  const zoom = params.has("z")
-    ? clampNumber(rawZ, minZoom, maxZoom)
-    : computeDefaultFullMapZoom(camera, viewport.width, viewport.height);
+  // ?at=lat,lon,650m (geographic, as Small SF shares views) wins over the older ?x=&y=&z= image coordinates
+  const geo = parseAtParam(params.get("at"));
+  const geoView = geo ? geoViewToCameraView(camera, geo) : null;
+
+  const centerImgX = geoView
+    ? geoView.centerImgX
+    : params.has("x")
+      ? clampNumber(rawX, 0, camera.imageWidthPx)
+      : defaultCenterX;
+  const centerImgY = geoView
+    ? geoView.centerImgY
+    : params.has("y")
+      ? clampNumber(rawY, 0, camera.imageHeightPx)
+      : defaultCenterY;
+  const zoom = geoView
+    ? clampNumber(geoView.zoom, minZoom, maxZoom)
+    : params.has("z")
+      ? clampNumber(rawZ, minZoom, maxZoom)
+      : computeDefaultFullMapZoom(camera, viewport.width, viewport.height);
 
   let sunHourJst: number | null;
   if (rawHour === "live") {
@@ -183,6 +205,9 @@ export function createInitialViewerState(
     searchQuery: "",
     tvMode: false,
     aboutOpen: false,
+    soundOn: false,
+    following: false,
+    introEnabled: params.get("intro") !== "0" && !prefersReducedMotion,
     selected: null,
     cameraView: {
       centerImgX,
@@ -192,17 +217,35 @@ export function createInitialViewerState(
   };
 }
 
-export function serializeShareUrl(state: ViewerState, baseHref: string): string {
+/**
+ * A link to the current view. Like Small SF it leads with `at=lat,lon,<metres across>m`
+ * (when the camera is known) and leaves out what is still at its default, so a plain shared
+ * view is a short, readable URL.
+ */
+export function serializeShareUrl(
+  state: ViewerState,
+  baseHref: string,
+  camera?: CameraManifest,
+): string {
   const url = new URL(baseHref);
   const p = new URLSearchParams();
-  p.set("lang", state.lang);
-  p.set("theme", state.theme);
-  p.set("v", state.variant);
-  p.set("m", state.feedPreset);
-  p.set("x", state.cameraView.centerImgX.toFixed(1));
-  p.set("y", state.cameraView.centerImgY.toFixed(1));
-  p.set("z", state.cameraView.zoom.toFixed(2));
-  p.set("sun", state.sunHourJst === null ? "live" : state.sunHourJst.toFixed(2));
+  if (camera) {
+    p.set("at", formatAtParam(cameraViewToGeoView(camera, state.cameraView)));
+  } else {
+    p.set("x", state.cameraView.centerImgX.toFixed(1));
+    p.set("y", state.cameraView.centerImgY.toFixed(1));
+    p.set("z", state.cameraView.zoom.toFixed(2));
+  }
+  if (state.lang !== "ja") p.set("lang", state.lang);
+  if (state.variant !== "illustrated") p.set("v", state.variant);
+  if (state.feedPreset !== "synthetic") p.set("m", state.feedPreset);
+  if (state.sunHourJst !== null) p.set("sun", state.sunHourJst.toFixed(2));
+  // the theme follows the sun unless the visitor picked the other one
+  {
+    const sunAlt = computeYokohamaSun(getSunDateForHourJst(state.sunHourJst)).altitudeDeg;
+    const autoTheme: UiTheme = isNightAltitude(sunAlt) ? "dark" : "light";
+    if (state.theme !== autoTheme || state.sunHourJst !== null) p.set("theme", state.theme);
+  }
   if (state.weatherMode !== "live") p.set("weather", state.weatherMode);
   if (!state.showTrains) p.set("trains", "0");
   if (!state.showBuses) p.set("buses", "0");
@@ -215,6 +258,7 @@ export function serializeShareUrl(state: ViewerState, baseHref: string): string 
   if (state.showTileGrid) p.set("grid", "1");
   if (state.showGcps) p.set("gcp", "1");
   if (state.showDeckTestPoint) p.set("deck", "1");
-  url.search = p.toString();
+  // commas need no escaping in a query string: keep at=35.45,139.64,650m readable
+  url.search = p.toString().replace(/%2C/gi, ",");
   return url.toString();
 }

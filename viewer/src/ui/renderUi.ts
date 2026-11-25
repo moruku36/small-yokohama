@@ -57,6 +57,8 @@ export interface UiHandlers {
   onSelectPortCall: (pc: AnimatedPortCall) => void;
   onSelectTrain: (tr: ResolvedTrain) => void;
   onClearSelection: () => void;
+  onToggleSound: () => void;
+  onToggleFollow: () => void;
 }
 
 function escapeHtml(text: string): string {
@@ -680,11 +682,21 @@ export function renderCard(
     </div>
     ${badgeHtml}
     ${bodyNote}
+    ${
+      sel.kind === "vehicle" || sel.kind === "train" || (sel.kind === "portcall" && sel.portCall.moving !== false)
+        ? `<button type="button" class="follow-btn" id="btn-follow" aria-pressed="${state.following}">${
+            state.following
+              ? `<span class="follow-dot" aria-hidden="true"></span>${escapeHtml(d.followingLabel)}`
+              : escapeHtml(d.followLabel)
+          }</button>`
+        : ""
+    }
     <dl class="card-dl">${rowsHtml}</dl>
     <a class="gmaps-link" href="${escapeHtml(gmapsUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.openGoogleMaps)}</a>
   `;
 
   el.querySelector("#btn-card-close")?.addEventListener("click", handlers.onClearSelection);
+  el.querySelector("#btn-follow")?.addEventListener("click", handlers.onToggleFollow);
 }
 
 export function renderStatus(
@@ -733,6 +745,9 @@ export function renderSq(
   const themeTip = isDark ? d.switchToLight : d.switchToDark;
   const docAny = document as unknown as { webkitFullscreenEnabled?: boolean };
   const canFullscreen = Boolean(document.fullscreenEnabled || docAny.webkitFullscreenEnabled);
+  const soundSupported =
+    typeof window !== "undefined" && ("AudioContext" in window || "webkitAudioContext" in window);
+  const soundTip = state.soundOn ? d.soundOffTip : d.soundOnTip;
 
   el.innerHTML = `
     <button type="button" id="btn-theme" title="${escapeHtml(themeTip)}" aria-label="${escapeHtml(themeTip)}">
@@ -751,6 +766,13 @@ export function renderSq(
     <button type="button" id="btn-fullscreen" ${canFullscreen ? "" : "hidden"} title="${escapeHtml(d.fullscreenTip)}" aria-label="${escapeHtml(d.fullscreenTip)}">
       <svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
     </button>
+    <button type="button" id="btn-sound" ${soundSupported ? "" : "hidden"} aria-pressed="${state.soundOn}" title="${escapeHtml(soundTip)}" aria-label="${escapeHtml(soundTip)}">
+      ${
+        state.soundOn
+          ? `<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.3 6.3a8 8 0 0 1 0 11.4"/></svg>`
+          : `<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`
+      }
+    </button>
     <button type="button" class="compass" id="btn-compass" title="${escapeHtml(d.compassTip)}" aria-label="${escapeHtml(d.compassTip)}">
       <svg viewBox="0 0 44 44" aria-hidden="true">
         <g transform="rotate(45 22 22)">
@@ -766,6 +788,7 @@ export function renderSq(
   el.querySelector("#btn-zoom-in")?.addEventListener("click", handlers.onZoomIn);
   el.querySelector("#btn-zoom-out")?.addEventListener("click", handlers.onZoomOut);
   el.querySelector("#btn-fullscreen")?.addEventListener("click", handlers.onToggleFullscreen);
+  el.querySelector("#btn-sound")?.addEventListener("click", handlers.onToggleSound);
   el.querySelector("#btn-compass")?.addEventListener("click", handlers.onResetView);
 }
 

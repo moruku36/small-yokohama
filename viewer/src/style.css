@@ -1280,3 +1280,108 @@ html[data-theme="dark"] .results button:hover {
     animation: none;
   }
 }
+
+/* ---- hover: a paper tag by the cursor naming what is under it (desktop) ---- */
+.map-stage.is-pointing:not(.is-dragging),
+.map-stage.is-pointing:not(.is-dragging) .openseadragon-canvas {
+  cursor: pointer;
+}
+
+.tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 25;
+  max-width: 260px;
+  padding: 7px 10px;
+  pointer-events: none;
+  background: var(--u-card);
+  color: var(--u-ink);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px -12px var(--u-shadow);
+  font: 12.5px/1.45 var(--u-sans);
+  will-change: transform;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip b {
+  display: block;
+  font: 500 16px/1.2 var(--u-serif);
+}
+
+.tip span {
+  display: block;
+  color: var(--u-mute);
+}
+
+/* ---- the opening: cloud over the map, under the bar and buttons ---- */
+.cloud-intro {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 12;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+.cloud-intro.gone {
+  opacity: 0;
+}
+
+/* ---- follow a bus, train or ship from its card ---- */
+.follow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 2px;
+  padding: 4px 0 3px;
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted var(--u-dot);
+  color: var(--u-ink);
+  font: 500 13px/1.2 var(--u-sans);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.follow-btn:hover,
+.follow-btn[aria-pressed="true"] {
+  color: var(--u-coral);
+  border-bottom-color: var(--u-coral);
+}
+
+.follow-btn:focus-visible {
+  outline: 2px solid var(--u-coral);
+  outline-offset: 2px;
+}
+
+.follow-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--u-coral);
+  animation: ublink 1.4s steps(1) infinite;
+}
+
+.sq #btn-sound[aria-pressed="true"] {
+  background: var(--u-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .follow-dot {
+    animation: none;
+  }
+  .cloud-intro {
+    transition: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .tip {
+    display: none;
+  }
+}
