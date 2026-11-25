@@ -1,12 +1,18 @@
 import "./style.css";
-import type { PoiRecord, PortCallRecord, SceneFeatureRecord } from "@small-yokohama/core";
+import {
+  computeYokohamaSun,
+  type PoiRecord,
+  type SceneFeatureRecord,
+} from "@small-yokohama/core";
 import { loadCurrentRelease, type LoadedReleaseBundle } from "./data/releaseLoader.js";
 import {
   fetchSnapshotForPreset,
   resolveVehiclesForFrame,
+  type AnimatedPortCall,
   type ResolvedFeedState,
   type ResolvedVehicle,
 } from "./data/vehicleFeed.js";
+import { getDict } from "./i18n.js";
 import {
   createInitialViewerState,
   serializeShareUrl,
@@ -16,6 +22,8 @@ import {
   type ViewerState,
 } from "./state.js";
 import { LabelLayer } from "./ui/LabelLayer.js";
+import { Minimap } from "./ui/Minimap.js";
+import { TransitBadgeLayer } from "./ui/TransitBadgeLayer.js";
 import {
   renderBar,
   renderCard,
@@ -27,6 +35,11 @@ import {
   type UiHandlers,
 } from "./ui/renderUi.js";
 import { MapViewer } from "./viewer/MapViewer.js";
+import {
+  SKY_PRESETS,
+  getSunDateForHourJst,
+  isNightAltitude,
+} from "./viewer/skyLighting.js";
 
 const TV_STOP_IDS = [
   "lm-yokohama-station",
@@ -51,8 +64,10 @@ async function bootstrap(): Promise<void> {
   const cardEl = document.getElementById("card")!;
   const statusEl = document.getElementById("status")!;
   const sqEl = document.getElementById("sq")!;
+  const minimapEl = document.getElementById("minimap");
   const creditEl = document.getElementById("credit")!;
   const aboutModalEl = document.getElementById("about-modal")!;
+  const transitLayerEl = document.getElementById("transit-layer");
   const labelLayerEl = document.getElementById("label-layer")!;
   const osdEl = document.getElementById("osd-container")!;
   const glCanvas = document.getElementById("webgl-overlay") as HTMLCanvasElement;
@@ -87,7 +102,9 @@ async function bootstrap(): Promise<void> {
   );
 
   const labelLayer = new LabelLayer();
+  const transitLayer = new TransitBadgeLayer();
   let mapViewer: MapViewer;
+  let minimap: Minimap | null = null;
   let tvIndex = 0;
   let tvTimerId = 0;
 
@@ -101,15 +118,58 @@ async function bootstrap(): Promise<void> {
     if (reRender) refreshUi();
   };
 
-  const syncLabels = () => {
+  const selectVehicle = (rv: ResolvedVehicle) => {
+    stopTv(false);
+    state.selected = {
+      kind: "vehicle",
+      vehicle: rv.record,
+      ageSec: rv.freshness.ageSec,
+      status: rv.freshness.status,
+    };
+    state.activeTab = null;
+    mapViewer.updateState(state, resolvedFeed);
+    refreshUi();
+  };
+
+  const syncTransitBadges = () => {
     if (!mapViewer) return;
     const bounds = mapViewer.getViewportInfo();
-    labelLayer.render(labelLayerEl, bundle, state, bounds, handlers.onSelectPoi);
+    transitLayer.render(
+      transitLayerEl,
+      bundle,
+      state,
+      bounds,
+      resolvedFeed,
+      selectVehicle,
+      handlers.onSelectPortCall,
+    );
+  };
+
+  const syncViewportOverlays = () => {
+    if (!mapViewer) return;
+    const bounds = mapViewer.getViewportInfo();
+    labelLayer.render(labelLayerEl, bundle, state, bounds, handlers.onSelectPoi, resolvedFeed);
+    transitLayer.render(
+      transitLayerEl,
+      bundle,
+      state,
+      bounds,
+      resolvedFeed,
+      selectVehicle,
+      handlers.onSelectPortCall,
+    );
+    minimap?.render(state, bounds);
   };
 
   const syncDocumentPrefs = () => {
     document.documentElement.dataset.theme = state.theme;
     document.documentElement.lang = state.lang;
+    document.title = getDict(state.lang).pageTitle;
+    document.body.classList.toggle("has-panel", Boolean(state.activeTab || state.selected));
+    const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.content = state.theme === "dark" ? "#383838" : "#ebe6dc";
+    }
   };
 
   const refreshUi = () => {
@@ -121,7 +181,7 @@ async function bootstrap(): Promise<void> {
     renderStatus(statusEl, state, resolvedFeed);
     renderSq(sqEl, state, handlers);
     renderCreditAndAboutModal(creditEl, aboutModalEl, state, bundle, handlers);
-    syncLabels();
+    syncViewportOverlays();
   };
 
   const advanceTvStop = () => {
@@ -151,24 +211,46 @@ async function bootstrap(): Promise<void> {
   };
 
   let toastTimer = 0;
-  const showToast = (label: string) => {
+  let toastHideTimer = 0;
+  const showToast = (label: string, anchorEl?: HTMLElement | null) => {
     if (!toastEl) return;
     window.clearTimeout(toastTimer);
-    toastEl.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>${label}</span>`;
+    window.clearTimeout(toastHideTimer);
+    toastEl.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>${label}</span>`;
     toastEl.hidden = false;
-    toastEl.classList.remove("gone");
+
+    const b = anchorEl?.getBoundingClientRect();
+    if (b && b.width > 0) {
+      const w = toastEl.offsetWidth || 220;
+      const cx = b.left + b.width * 0.5;
+      const x = Math.max(12 + w * 0.5, Math.min(window.innerWidth - 12 - w * 0.5, cx));
+      toastEl.style.left = `${Math.round(x)}px`;
+      toastEl.style.top = `${Math.round(b.bottom + 14)}px`;
+      toastEl.style.setProperty("--ox", `${Math.round(cx - (x - w * 0.5))}px`);
+    } else {
+      toastEl.style.left = "";
+      toastEl.style.top = "";
+      toastEl.style.removeProperty("--ox");
+    }
+
+    window.requestAnimationFrame(() => {
+      toastEl.classList.remove("gone");
+    });
     toastTimer = window.setTimeout(() => {
       toastEl.classList.add("gone");
-      window.setTimeout(() => {
+      toastHideTimer = window.setTimeout(() => {
         if (toastEl.classList.contains("gone")) toastEl.hidden = true;
       }, 220);
-    }, 1800);
+    }, 2000);
   };
 
   const handlers: UiHandlers = {
     onSetTab: (tab: DropTab) => {
       stopTv(false);
       state.activeTab = tab;
+      if (tab) {
+        state.selected = null;
+      }
       refreshUi();
     },
     onSearchQuery: (q: string) => {
@@ -186,18 +268,24 @@ async function bootstrap(): Promise<void> {
       advanceTvStop();
       tvTimerId = window.setInterval(advanceTvStop, 7500);
     },
-    onShare: async () => {
+    onShare: async (anchorEl?: HTMLElement | null) => {
       const url = serializeShareUrl(state, window.location.href);
       window.history.replaceState(null, "", url);
       if (navigator.clipboard?.writeText) {
         try {
           await navigator.clipboard.writeText(url);
         } catch {
-          showToast(state.lang === "en" ? "URL updated in address bar" : "URLをアドレスバーに反映しました");
+          showToast(
+            state.lang === "en" ? "Link ready in the address bar" : "URLをアドレスバーに反映しました",
+            anchorEl,
+          );
           return true;
         }
       }
-      showToast(state.lang === "en" ? "Link copied to clipboard" : "この視点のURLをコピーしました");
+      showToast(
+        state.lang === "en" ? "Copied your current view to clipboard." : "この視点のURLをコピーしました",
+        anchorEl,
+      );
       return true;
     },
     onToggleAbout: (open: boolean) => {
@@ -213,22 +301,41 @@ async function bootstrap(): Promise<void> {
       refreshUi();
     },
     onToggleTheme: () => {
-      state.theme = state.theme === "light" ? "dark" : "light";
+      const goDark = state.theme !== "dark";
+      const liveIsNight = isNightAltitude(computeYokohamaSun(getSunDateForHourJst(null)).altitudeDeg);
+      state.theme = goDark ? "dark" : "light";
+      state.sunHourJst = goDark
+        ? liveIsNight
+          ? null
+          : SKY_PRESETS.night
+        : liveIsNight
+          ? SKY_PRESETS.day
+          : null;
+      mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
     onZoomIn: () => {
       stopTv(true);
-      mapViewer.zoomBy(1.3);
+      mapViewer.zoomBy(1.6);
     },
     onZoomOut: () => {
       stopTv(true);
-      mapViewer.zoomBy(1 / 1.3);
+      mapViewer.zoomBy(1 / 1.6);
     },
     onToggleFullscreen: () => {
-      if (document.fullscreenElement) {
-        void document.exitFullscreen?.();
+      const docAny = document as unknown as {
+        webkitFullscreenElement?: Element;
+        webkitExitFullscreen?: () => Promise<void>;
+      };
+      const elAny = document.documentElement as unknown as {
+        webkitRequestFullscreen?: () => Promise<void>;
+      };
+      if (document.fullscreenElement || docAny.webkitFullscreenElement) {
+        void (document.exitFullscreen ?? docAny.webkitExitFullscreen)?.call(document);
       } else {
-        void document.documentElement.requestFullscreen?.();
+        void (document.documentElement.requestFullscreen ?? elAny.webkitRequestFullscreen)?.call(
+          document.documentElement,
+        );
       }
     },
     onResetView: () => {
@@ -245,6 +352,8 @@ async function bootstrap(): Promise<void> {
     },
     onChangeSunHour: (hour: number | null) => {
       state.sunHourJst = hour;
+      const sun = computeYokohamaSun(getSunDateForHourJst(hour));
+      state.theme = isNightAltitude(sun.altitudeDeg) ? "dark" : "light";
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
@@ -276,11 +385,12 @@ async function bootstrap(): Promise<void> {
       mapViewer.panToLonLat(poi.lon, poi.lat, poi.elevationM);
       refreshUi();
     },
-    onSelectPortCall: (pc: PortCallRecord) => {
+    onSelectPortCall: (pc: AnimatedPortCall) => {
       stopTv(false);
-      state.selected = { kind: "portcall", portCall: pc };
+      const livePc = resolvedFeed.portCalls.find((x) => x.id === pc.id) ?? pc;
+      state.selected = { kind: "portcall", portCall: livePc };
       state.activeTab = null;
-      mapViewer.panToLonLat(pc.lon, pc.lat, 3.5);
+      mapViewer.panToLonLat(livePc.lon, livePc.lat, 3.5);
       refreshUi();
     },
     onClearSelection: () => {
@@ -292,57 +402,61 @@ async function bootstrap(): Promise<void> {
   };
 
   mapViewer = new MapViewer(osdEl, glCanvas, bundle, state, {
-    onSelectVehicle: (rv: ResolvedVehicle) => {
-      stopTv(false);
-      state.selected = {
-        kind: "vehicle",
-        vehicle: rv.record,
-        ageSec: rv.freshness.ageSec,
-        status: rv.freshness.status,
-      };
-      mapViewer.updateState(state, resolvedFeed);
-      refreshUi();
-    },
+    onSelectVehicle: selectVehicle,
     onSelectLandmark: (lm) => {
       stopTv(false);
       state.selected = { kind: "landmark", landmark: lm };
+      state.activeTab = null;
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
     onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => {
       stopTv(false);
       state.selected = { kind: "feature", feature: feat, lon, lat };
+      state.activeTab = null;
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
     onSelectPortCall: (pc) => {
       stopTv(false);
       state.selected = { kind: "portcall", portCall: pc };
+      state.activeTab = null;
       mapViewer.updateState(state, resolvedFeed);
       refreshUi();
     },
     onClearSelection: () => {
+      const hadUi = Boolean(state.selected || state.activeTab);
       state.selected = null;
-      if (state.activeTab) {
-        state.activeTab = null;
+      state.activeTab = null;
+      if (hadUi) {
+        mapViewer.updateState(state, resolvedFeed);
+        refreshUi();
       }
-      mapViewer.updateState(state, resolvedFeed);
-      refreshUi();
     },
     onViewChanged: (centerImgX, centerImgY, zoom) => {
       state.cameraView = { centerImgX, centerImgY, zoom };
-      syncLabels();
+      syncViewportOverlays();
     },
     onTogglePlay: handlers.onTogglePlay,
     onUserInteract: () => {
       stopTv(true);
+      if (state.activeTab) {
+        state.activeTab = null;
+        refreshUi();
+      }
     },
   });
+
+  if (minimapEl) {
+    minimap = new Minimap(minimapEl, bundle, (imgX, imgY, imm) => {
+      stopTv(true);
+      mapViewer.panToImagePx(imgX, imgY, imm);
+    });
+  }
 
   mapViewer.updateState(state, resolvedFeed);
   refreshUi();
 
-  // Keyboard shortcuts matching Small SF + map navigation
   window.addEventListener("keydown", (e) => {
     if (
       e.target instanceof HTMLInputElement ||
@@ -384,8 +498,8 @@ async function bootstrap(): Promise<void> {
     else if (e.key === "ArrowRight") mapViewer.panByCssPx(stepPx, 0);
     else if (e.key === "ArrowUp") mapViewer.panByCssPx(0, -stepPx);
     else if (e.key === "ArrowDown") mapViewer.panByCssPx(0, stepPx);
-    else if (e.key === "+" || e.key === "=") mapViewer.zoomBy(1.25);
-    else if (e.key === "-") mapViewer.zoomBy(0.8);
+    else if (e.key === "+" || e.key === "=") mapViewer.zoomBy(1.6);
+    else if (e.key === "-") mapViewer.zoomBy(1 / 1.6);
     else if (e.key === "0") handlers.onResetView();
     else if (e.key === " ") {
       e.preventDefault();
@@ -393,7 +507,6 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  // Live 30-second polling when live preset is selected
   window.setInterval(() => {
     if (state.feedPreset === "live" && !document.hidden) {
       void fetchSnapshotForPreset(bundle.baseReleaseUrl, "live", state.liveEndpoint).then(
@@ -407,7 +520,24 @@ async function bootstrap(): Promise<void> {
     }
   }, 30_000);
 
-  // Animation loop — strictly paused when tab is hidden
+  window.setInterval(() => {
+    if (document.hidden) return;
+    renderStatus(statusEl, state, resolvedFeed);
+    if (state.sunHourJst === null) {
+      const liveIsNight = isNightAltitude(
+        computeYokohamaSun(getSunDateForHourJst(null)).altitudeDeg,
+      );
+      const nextTheme = liveIsNight ? "dark" : "light";
+      if (state.theme !== nextTheme) {
+        state.theme = nextTheme;
+        syncDocumentPrefs();
+        renderSq(sqEl, state, handlers);
+      }
+      mapViewer.updateState(state, resolvedFeed, true);
+      minimap?.render(state, mapViewer.getViewportInfo());
+    }
+  }, 15_000);
+
   let lastTs = performance.now();
   let lastUiRefreshTs = lastTs;
   let rafId = 0;
@@ -428,13 +558,17 @@ async function bootstrap(): Promise<void> {
         state.simTimeSec,
       );
       mapViewer.updateState(state, resolvedFeed);
+      syncTransitBadges();
 
-      // Refresh selected card and status pill at ~4 Hz without DOM churn at 60 FPS
       if (now - lastUiRefreshTs > 250) {
         lastUiRefreshTs = now;
-        if (state.selected?.kind === "vehicle") {
+        if (state.selected?.kind === "vehicle" || state.selected?.kind === "portcall") {
           const drift = mapViewer.measureMaxMarkerDriftCssPx();
           renderCard(cardEl, state, resolvedFeed, drift, handlers);
+        }
+        if (state.selected?.kind === "portcall") {
+          const bounds = mapViewer.getViewportInfo();
+          labelLayer.render(labelLayerEl, bundle, state, bounds, handlers.onSelectPoi, resolvedFeed);
         }
         renderStatus(statusEl, state, resolvedFeed);
       }

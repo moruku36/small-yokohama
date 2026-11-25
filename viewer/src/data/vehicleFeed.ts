@@ -10,6 +10,26 @@ import {
 } from "@small-yokohama/core";
 import type { FeedPreset } from "../state.js";
 
+export type VesselKind = "cruise" | "cruiser" | "waterbus" | "tug";
+
+export interface BoatKeyframe {
+  timeSec: number;
+  lon: number;
+  lat: number;
+  bearingDeg: number;
+}
+
+export interface AnimatedPortCall extends PortCallRecord {
+  vesselKind?: VesselKind;
+  lengthM?: number;
+  widthM?: number;
+  heightM?: number;
+  bearingDeg?: number;
+  speedKnots?: number;
+  moving?: boolean;
+  keyframes?: BoatKeyframe[];
+}
+
 export interface ResolvedVehicle {
   record: VehicleRecord;
   freshness: FreshnessEvaluation;
@@ -26,7 +46,7 @@ export interface ResolvedFeedState {
   sourceLabelEn: string;
   fetchedAt: string;
   vehicles: ResolvedVehicle[];
-  portCalls: PortCallRecord[];
+  portCalls: AnimatedPortCall[];
 }
 
 const FIXTURE_FILES: Record<Exclude<FeedPreset, "live">, string> = {
@@ -103,7 +123,13 @@ export function resolveVehiclesForFrame(
     const kfList = snapshot.keyframes?.[v.entityId];
     if (kfList && kfList.length > 0) {
       if (v.mode === "synthetic" || v.mode === "replay" || v.mode === "scheduled") {
-        const dur = snapshot.replayDurationSec ?? kfList[kfList.length - 1]!.timeSec;
+        const lastKfTime = kfList[kfList.length - 1]!.timeSec;
+        const dur =
+          v.entityId === "syn-bayside-blue-01" && snapshot.replayDurationSec
+            ? snapshot.replayDurationSec
+            : lastKfTime > 0
+              ? lastKfTime
+              : (snapshot.replayDurationSec ?? 60);
         const sample = sampleReplayTrack(kfList, simTimeSec, dur);
         animated = {
           ...v,
@@ -139,6 +165,30 @@ export function resolveVehiclesForFrame(
     });
   }
 
+  const rawPortCalls = (snapshot.portCalls ?? []) as AnimatedPortCall[];
+  const portCalls: AnimatedPortCall[] = rawPortCalls.map((pc) => {
+    const kfs = pc.keyframes;
+    if (!kfs || kfs.length < 2) {
+      return pc;
+    }
+    const dur = kfs[kfs.length - 1]!.timeSec;
+    if (dur <= 0) return pc;
+    const mapped = kfs.map((k) => ({
+      timeSec: k.timeSec,
+      lon: k.lon,
+      lat: k.lat,
+      bearingDeg: k.bearingDeg,
+      roadElevationM: 0,
+    }));
+    const sample = sampleReplayTrack(mapped, simTimeSec, dur);
+    return {
+      ...pc,
+      lon: sample.lon,
+      lat: sample.lat,
+      bearingDeg: sample.bearingDeg,
+    };
+  });
+
   return {
     feedHealth: snapshot.feedHealth,
     messageJa: snapshot.feedMessage.ja,
@@ -147,6 +197,6 @@ export function resolveVehiclesForFrame(
     sourceLabelEn: snapshot.source.labelEn,
     fetchedAt: snapshot.fetchedAt,
     vehicles: resolved,
-    portCalls: snapshot.portCalls ?? [],
+    portCalls,
   };
 }

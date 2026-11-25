@@ -11,6 +11,7 @@ import {
 import {
   RED_BRICK_CENTER_IMG,
   computeDefaultFullMapZoom,
+  computeFullMapMaxZoom,
   computeFullMapMinZoom,
   computePinchZoom,
   computeWheelZoomFactor,
@@ -72,10 +73,30 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     expect(reparsed.showDeckTestPoint).toBe(true);
     expect(reparsed.cameraView.centerImgX).toBeCloseTo(2400, 1);
 
+    const dayNow = new Date("2026-11-25T03:30:00Z"); // 12:30 JST
+    const nightNow = new Date("2026-11-25T12:30:00Z"); // 21:30 JST
+
     // Defaults + out-of-bounds clamping
-    const defaults = createInitialViewerState(cam, "", false);
+    const defaults = createInitialViewerState(
+      cam,
+      "",
+      false,
+      { width: 1280, height: 800 },
+      dayNow,
+    );
     expect(defaults.theme).toBe("light");
+    expect(defaults.sunHourJst).toBeNull();
     expect(defaults.cameraView.zoom).toBe(2.25);
+
+    const nightDefaults = createInitialViewerState(
+      cam,
+      "",
+      false,
+      { width: 1280, height: 800 },
+      nightNow,
+    );
+    expect(nightDefaults.theme).toBe("dark");
+    expect(nightDefaults.sunHourJst).toBeNull();
 
     const clamped = createInitialViewerState(cam, "?x=-9999&y=99999&z=999", false);
     expect(clamped.cameraView.centerImgX).toBe(0);
@@ -98,25 +119,51 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     const fullCam = createFullYokohamaCamera();
     const mobileMin = computeFullMapMinZoom(fullCam, 390, 844);
     const mobileInit = computeDefaultFullMapZoom(fullCam, 390, 844);
+    const mobileMax = computeFullMapMaxZoom(fullCam, 390, 844);
     expect(mobileInit).toBeGreaterThan(mobileMin);
-    expect(mobileInit).toBeGreaterThan(10);
+    expect(mobileInit).toBeGreaterThan(7);
+    expect(mobileInit).toBeLessThan(12);
+    expect(mobileMax).toBeGreaterThan(mobileInit);
+    expect(mobileMax).toBeLessThanOrEqual(25);
     const mobileVisibleH =
       (fullCam.imageWidthPx / mobileInit) * (844 / 390);
     expect(mobileVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);
 
-    const desktopMin = computeFullMapMinZoom(fullCam, 1440, 900);
-    const desktopInit = computeDefaultFullMapZoom(fullCam, 1440, 900);
+    const desktopMin = computeFullMapMinZoom(fullCam, 1280, 800);
+    const desktopInit = computeDefaultFullMapZoom(fullCam, 1280, 800);
+    const desktopMax = computeFullMapMaxZoom(fullCam, 1280, 800);
     expect(desktopInit).toBeGreaterThan(desktopMin);
+    expect(desktopInit).toBeGreaterThan(6);
+    expect(desktopInit).toBeLessThan(10);
+    expect(desktopMax).toBeGreaterThan(desktopInit);
+    expect(desktopMax).toBeLessThanOrEqual(25);
     const desktopVisibleH =
-      (fullCam.imageWidthPx / desktopInit) * (900 / 1440);
+      (fullCam.imageWidthPx / desktopInit) * (800 / 1280);
     expect(desktopVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);
 
-    const mobileState = createInitialViewerState(fullCam, "", false, {
-      width: 390,
-      height: 844,
-    });
+    const wideDesktopInit = computeDefaultFullMapZoom(fullCam, 1440, 900);
+    expect(wideDesktopInit).toBeGreaterThan(6);
+    expect(wideDesktopInit).toBeLessThan(10);
+
+    const dayNow = new Date("2026-11-25T03:30:00Z");
+    const mobileState = createInitialViewerState(
+      fullCam,
+      "",
+      false,
+      {
+        width: 390,
+        height: 844,
+      },
+      dayNow,
+    );
     expect(mobileState.cameraView.centerImgX).toBe(RED_BRICK_CENTER_IMG.x);
     expect(mobileState.cameraView.centerImgY).toBe(RED_BRICK_CENTER_IMG.y);
     expect(mobileState.cameraView.zoom).toBeCloseTo(mobileInit, 6);
+    expect(mobileState.sunHourJst).toBeNull();
+
+    const darkDefault = createInitialViewerState(fullCam, "?theme=dark", false);
+    expect(darkDefault.sunHourJst).toBe(20.5);
+    const lightDefault = createInitialViewerState(fullCam, "?theme=light", false);
+    expect(lightDefault.sunHourJst).toBe(10.5);
   });
 });

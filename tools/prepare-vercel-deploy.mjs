@@ -118,9 +118,24 @@ function main() {
   rmSync(DEPLOY_DIR, { recursive: true, force: true });
   mkdirSync(DST_RELEASE_DIR, { recursive: true });
 
-  // Copy only built SPA entry + bundled JS/CSS assets (never copy viewer/dist/releases/)
+  // Copy only built SPA entry, icons, manifest, and bundled JS/CSS assets (never copy viewer/dist/releases/)
   cpSync(join(VIEWER_DIST_DIR, "index.html"), join(DEPLOY_DIR, "index.html"));
   cpSync(join(VIEWER_DIST_DIR, "assets"), join(DEPLOY_DIR, "assets"), { recursive: true });
+  for (const staticFile of [
+    "favicon.ico",
+    "favicon.svg",
+    "favicon-32x32.png",
+    "apple-touch-icon.png",
+    "icon-192.png",
+    "icon-512.png",
+    "site.webmanifest",
+  ]) {
+    const src = join(VIEWER_DIST_DIR, staticFile);
+    if (!existsSync(src)) {
+      throw new Error(`Missing built static asset ${src}`);
+    }
+    cpSync(src, join(DEPLOY_DIR, staticFile));
+  }
 
   // Write releases/current.json pointing to full-yokohama-v1
   const pointer = {
@@ -152,12 +167,12 @@ function main() {
     writeFileSync(join(DST_RELEASE_DIR, dziName), updated, "utf8");
   }
 
-  console.log("[prepare-vercel] Converting DZI pyramids PNG -> JPEG (quality 86/82)...");
+  console.log("[prepare-vercel] Converting DZI pyramids PNG -> JPEG (quality 92/82)...");
   convertDziPngDirToJpeg([
     {
       srcDir: join(SRC_RELEASE_DIR, "illustrated_files"),
       dstDir: join(DST_RELEASE_DIR, "illustrated_files"),
-      quality: 86,
+      quality: 92,
     },
     {
       srcDir: join(SRC_RELEASE_DIR, "plain_files"),

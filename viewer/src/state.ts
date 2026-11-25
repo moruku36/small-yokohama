@@ -1,17 +1,23 @@
-import type {
-  CameraManifest,
-  Landmark,
-  PoiRecord,
-  PortCallRecord,
-  SceneFeatureRecord,
-  VehicleRecord,
+import {
+  computeYokohamaSun,
+  type CameraManifest,
+  type Landmark,
+  type PoiRecord,
+  type SceneFeatureRecord,
+  type VehicleRecord,
 } from "@small-yokohama/core";
+import type { AnimatedPortCall } from "./data/vehicleFeed.js";
 import type { Lang } from "./i18n.js";
 import {
   RED_BRICK_CENTER_IMG,
   computeDefaultFullMapZoom,
   isFullYokohamaCamera,
 } from "./viewer/cameraMath.js";
+import {
+  SKY_PRESETS,
+  getSunDateForHourJst,
+  isNightAltitude,
+} from "./viewer/skyLighting.js";
 
 export type MapVariant = "illustrated" | "plain";
 export type UiTheme = "light" | "dark";
@@ -29,7 +35,7 @@ export type SelectedEntity =
   | { kind: "landmark"; landmark: Landmark }
   | { kind: "poi"; poi: PoiRecord }
   | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number }
-  | { kind: "portcall"; portCall: PortCallRecord }
+  | { kind: "portcall"; portCall: AnimatedPortCall }
   | null;
 
 export interface ViewerState {
@@ -83,13 +89,15 @@ export function createInitialViewerState(
   search: string,
   prefersReducedMotion = false,
   viewport: { width: number; height: number } = { width: 1280, height: 800 },
+  now = new Date(),
 ): ViewerState {
   const params = new URLSearchParams(search);
   const langParam = params.get("lang");
   const lang: Lang = langParam === "en" ? "en" : "ja";
 
   const themeParam = params.get("theme") as UiTheme | null;
-  const theme: UiTheme = themeParam && VALID_THEMES.has(themeParam) ? themeParam : "light";
+  const explicitTheme: UiTheme | null =
+    themeParam && VALID_THEMES.has(themeParam) ? themeParam : null;
 
   const varParam = params.get("v") as MapVariant | null;
   const variant: MapVariant = varParam && VALID_VARIANTS.has(varParam) ? varParam : "illustrated";
@@ -119,15 +127,24 @@ export function createInitialViewerState(
     ? clampNumber(rawZ, minZoom, maxZoom)
     : computeDefaultFullMapZoom(camera, viewport.width, viewport.height);
 
-  let sunHourJst: number | null = 15.5;
+  let sunHourJst: number | null;
   if (rawHour === "live") {
     sunHourJst = null;
-  } else if (rawHour !== null) {
-    const parsedHour = Number(rawHour);
-    if (Number.isFinite(parsedHour)) {
-      sunHourJst = clampNumber(parsedHour, 0, 23.75);
-    }
+  } else if (rawHour !== null && rawHour.trim() !== "" && Number.isFinite(Number(rawHour))) {
+    sunHourJst = clampNumber(Number(rawHour), 0, 23.75);
+  } else if (explicitTheme === "dark") {
+    sunHourJst = SKY_PRESETS.night;
+  } else if (explicitTheme === "light") {
+    sunHourJst = SKY_PRESETS.day;
+  } else {
+    sunHourJst = null;
   }
+
+  const theme: UiTheme =
+    explicitTheme ??
+    (isNightAltitude(computeYokohamaSun(getSunDateForHourJst(sunHourJst, now)).altitudeDeg)
+      ? "dark"
+      : "light");
 
   return {
     lang,

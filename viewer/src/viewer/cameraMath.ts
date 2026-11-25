@@ -28,12 +28,14 @@ export function computeDefaultFullMapZoom(
     return 2.25;
   }
   const targetMeters =
-    viewportW <= 700 ? 285 : Math.min(520, Math.max(360, viewportW * 0.36));
+    viewportW <= 700
+      ? 540
+      : Math.min(740, Math.max(620, viewportW * 0.5));
   const visibleImgW = targetMeters / camera.metersPerPixel;
   const desiredZoom = camera.imageWidthPx / visibleImgW;
   return Math.min(
     48,
-    Math.max(computeFullMapMinZoom(camera, viewportW, viewportH) * 1.18, desiredZoom),
+    Math.max(computeFullMapMinZoom(camera, viewportW, viewportH) * 1.15, desiredZoom),
   );
 }
 
@@ -46,7 +48,9 @@ export function computeLandmarkZoom(
     return 2.8;
   }
   const targetMeters =
-    viewportW <= 700 ? 240 : Math.min(420, Math.max(320, viewportW * 0.3));
+    viewportW <= 700
+      ? 400
+      : Math.min(540, Math.max(440, viewportW * 0.38));
   const desiredZoom = camera.imageWidthPx / (targetMeters / camera.metersPerPixel);
   return Math.min(
     48,
@@ -66,6 +70,23 @@ export function computePinchZoom(
   }
   const ratio = Math.min(2.0, Math.max(0.5, currDistPx / prevDistPx));
   return Math.min(maxZoom, Math.max(minZoom, currentZoom * ratio));
+}
+
+export function computeFullMapMaxZoom(
+  camera: CameraManifest,
+  viewportW: number,
+  viewportH: number,
+): number {
+  if (!isFullYokohamaCamera(camera)) {
+    return 16;
+  }
+  const isMobile = viewportW <= 700;
+  const maxPixelRatio = isMobile ? 1.15 : 1.5;
+  const minVisibleMeters = isMobile ? 220 : 260;
+  const byPixelRatio = (camera.imageWidthPx * maxPixelRatio) / Math.max(1, viewportW);
+  const byMeters = camera.imageWidthPx / (minVisibleMeters / camera.metersPerPixel);
+  const home = computeDefaultFullMapZoom(camera, viewportW, viewportH);
+  return Math.max(home * 1.45, Math.min(byPixelRatio, byMeters));
 }
 
 export function computeWheelZoomFactor(

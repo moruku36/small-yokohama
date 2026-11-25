@@ -9,43 +9,67 @@ import {
   wgs84ToLocal,
   type CameraManifest,
   type Landmark,
-  type PortCallRecord,
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
 import { pickFeatureIdAtImagePx, type LoadedReleaseBundle } from "../data/releaseLoader.js";
-import type { ResolvedFeedState, ResolvedVehicle } from "../data/vehicleFeed.js";
+import type {
+  AnimatedPortCall,
+  ResolvedFeedState,
+  ResolvedVehicle,
+} from "../data/vehicleFeed.js";
 import type { MapVariant, ViewerState } from "../state.js";
 import type { ViewportImageBounds } from "../ui/LabelLayer.js";
 import { WebGLOverlay } from "./WebGLOverlay.js";
 import {
   RED_BRICK_CENTER_IMG,
   computeDefaultFullMapZoom,
+  computeFullMapMaxZoom,
   computeFullMapMinZoom,
   computeLandmarkZoom,
   computePinchZoom,
   computeWheelZoomFactor,
   isFullYokohamaCamera,
 } from "./cameraMath.js";
+import {
+  computeSkyGrade,
+  getSunDateForHourJst,
+  type SkyGrade,
+} from "./skyLighting.js";
 
 export interface MapViewerCallbacks {
   onSelectVehicle: (rv: ResolvedVehicle) => void;
   onSelectLandmark: (lm: Landmark) => void;
   onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => void;
-  onSelectPortCall: (pc: PortCallRecord) => void;
+  onSelectPortCall: (pc: AnimatedPortCall) => void;
   onClearSelection: () => void;
   onViewChanged: (centerImgX: number, centerImgY: number, zoom: number) => void;
   onTogglePlay: () => void;
   onUserInteract?: () => void;
 }
 
+const UI_CHROME_SELECTOR = "#bar, #drop, #card, #sq, #status, #minimap, #about-modal, #credit";
+const PIN_SELECTOR = ".map-label, .search-pin, .bus-pill, .boat-pill";
+
 export class MapViewer {
   private readonly osd: OpenSeadragon.Viewer;
   private readonly glOverlay: WebGLOverlay;
   private readonly camera: CameraManifest;
+  private readonly isMobile: boolean;
+  private readonly inputRoot: HTMLElement;
+  private readonly skyTintEl: HTMLElement | null;
+  private readonly veilEl: HTMLElement | null;
+  private readonly skyFilterSvg: SVGSVGElement | null = null;
+  private readonly skyColorMatrix: SVGFEColorMatrixElement | null = null;
   private currentVariant: MapVariant;
   private feedState: ResolvedFeedState | null = null;
   private resizeObserver: ResizeObserver;
   private cleanupInput: () => void = () => {};
+  private zoomStepFn: ((factor: number, pixel: OpenSeadragon.Point) => void) | null = null;
+  private currentRgb: [number, number, number] = [1, 1, 1];
+  private targetRgb: [number, number, number] = [1, 1, 1];
+  private skyAnimRaf = 0;
+  private skyAnimLastTs = 0;
+  private lastFilterStr = "";
   private isDestroyed = false;
 
   constructor(
@@ -57,26 +81,54 @@ export class MapViewer {
   ) {
     this.camera = bundle.camera;
     this.currentVariant = state.variant;
+    this.inputRoot = osdElement.parentElement ?? osdElement;
+    this.skyTintEl = document.getElementById("sky-tint");
+    this.veilEl = document.getElementById("veil");
     this.glOverlay = new WebGLOverlay(glCanvas, bundle.camera, bundle.depthTiles);
 
     const isFull = isFullYokohamaCamera(bundle.camera);
-    const isMobile =
+    this.isMobile =
       typeof window !== "undefined" &&
       ((window.matchMedia?.("(pointer: coarse)").matches ?? false) || window.innerWidth <= 700);
+
+    // SVG feColorMatrix filter for WebGL desktop map tinting (Small SF technique; avoids Chromium blend bugs)
+    if (!this.isMobile && typeof document !== "undefined") {
+      const ns = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("width", "0");
+      svg.setAttribute("height", "0");
+      svg.setAttribute("aria-hidden", "true");
+      svg.style.position = "absolute";
+      svg.style.pointerEvents = "none";
+      const filter = document.createElementNS(ns, "filter");
+      filter.setAttribute("id", "sy-sky-tint");
+      filter.setAttribute("color-interpolation-filters", "sRGB");
+      const matrix = document.createElementNS(ns, "feColorMatrix");
+      matrix.setAttribute("type", "matrix");
+      matrix.setAttribute("values", "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0");
+      filter.appendChild(matrix);
+      svg.appendChild(filter);
+      document.body.appendChild(svg);
+      this.skyFilterSvg = svg;
+      this.skyColorMatrix = matrix;
+    }
 
     const dziUrl = `${bundle.baseReleaseUrl}/${bundle.release.variants[state.variant].dziPath}`;
     this.osd = OpenSeadragon({
       element: osdElement,
       tileSources: dziUrl,
-      drawer: isMobile ? "canvas" : ["webgl", "canvas"],
-      maxImageCacheCount: isMobile ? 60 : 200,
-      imageLoaderLimit: isMobile ? 4 : 8,
+      drawer: this.isMobile ? "canvas" : ["webgl", "canvas"],
+      mouseNavEnabled: false,
+      maxImageCacheCount: this.isMobile ? 60 : 250,
+      imageLoaderLimit: this.isMobile ? 4 : 8,
+      minPixelRatio: 1.0,
+      smoothTileEdgesMinZoom: Infinity,
       showNavigationControl: false,
       showNavigator: false,
       animationTime: state.reducedMotion ? 0 : 0.6,
       springStiffness: state.reducedMotion ? 100 : 9,
       minZoomImageRatio: isFull ? 0.96 : 0.55,
-      maxZoomPixelRatio: isFull ? 2.5 : 6,
+      maxZoomPixelRatio: isFull ? (this.isMobile ? 1.15 : 1.5) : 6,
       visibilityRatio: isFull ? 0.92 : 0.65,
       constrainDuringPan: false,
       gestureSettingsMouse: {
@@ -110,12 +162,13 @@ export class MapViewer {
       this.updateViewportMinZoom(false);
       this.applyCameraView(this.state.cameraView, true);
       this.osd.viewport?.applyConstraints(true);
-      this.renderOverlayFrame();
+      this.renderOverlayFrame(true);
+      this.dismissVeil();
     });
 
     const syncHandler = () => {
       this.syncCameraViewState();
-      this.renderOverlayFrame();
+      this.renderOverlayFrame(false);
     };
     this.osd.addHandler("update-viewport", syncHandler);
     this.osd.addHandler("animation", syncHandler);
@@ -126,11 +179,118 @@ export class MapViewer {
 
     this.resizeObserver = new ResizeObserver(() => {
       this.updateViewportMinZoom(true);
-      this.renderOverlayFrame();
+      this.renderOverlayFrame(false);
     });
     this.resizeObserver.observe(osdElement);
 
     this.cleanupInput = this.installDirectInputController();
+    this.renderOverlayFrame(true);
+  }
+
+  private dismissVeil(): void {
+    if (!this.veilEl || this.veilEl.hidden) return;
+    this.veilEl.classList.add("gone");
+    window.setTimeout(() => {
+      if (this.veilEl?.classList.contains("gone")) {
+        this.veilEl.hidden = true;
+      }
+    }, 520);
+  }
+
+  private computeCurrentSky(): { grade: SkyGrade } {
+    const sunDate = getSunDateForHourJst(this.state.sunHourJst);
+    const sun = computeYokohamaSun(sunDate);
+    return { grade: computeSkyGrade(sun.altitudeDeg) };
+  }
+
+  private writeSkyFilterValues(rgb: readonly [number, number, number], grade: SkyGrade): void {
+    const isDay = rgb[0] > 0.992 && rgb[1] > 0.992 && rgb[2] > 0.992;
+
+    if (!this.isMobile && this.skyColorMatrix) {
+      const r = rgb[0].toFixed(3);
+      const g = rgb[1].toFixed(3);
+      const b = rgb[2].toFixed(3);
+      this.skyColorMatrix.setAttribute(
+        "values",
+        `${r} 0 0 0 0  0 ${g} 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`,
+      );
+      const nextFilter = isDay ? "" : "url(#sy-sky-tint)";
+      if (this.lastFilterStr !== nextFilter) {
+        this.lastFilterStr = nextFilter;
+        this.osdElement.style.filter = nextFilter;
+      }
+      if (this.skyTintEl) {
+        this.skyTintEl.style.opacity = "0";
+      }
+      return;
+    }
+
+    // Mobile 2D Canvas fallback: reliable across iOS Safari & Android Chrome
+    const strength = Math.max(
+      0,
+      Math.min(0.95, 1 - Math.min(rgb[0], rgb[1], rgb[2])),
+    );
+    const nightAmt = grade.nightLights;
+    const nextFilter = isDay
+      ? ""
+      : `brightness(${(1 - nightAmt * 0.1).toFixed(3)}) contrast(${(1 + nightAmt * 0.08).toFixed(3)}) saturate(${(1 - nightAmt * 0.12).toFixed(3)})`;
+    if (this.lastFilterStr !== nextFilter) {
+      this.lastFilterStr = nextFilter;
+      this.osdElement.style.filter = nextFilter;
+    }
+    if (this.skyTintEl) {
+      if (isDay) {
+        this.skyTintEl.style.opacity = "0";
+      } else {
+        const [mr, mg, mb] = grade.multiplyCssRgb;
+        this.skyTintEl.style.background = `rgb(${mr}, ${mg}, ${mb})`;
+        this.skyTintEl.style.opacity = Math.max(strength, grade.multiplyOpacity).toFixed(3);
+      }
+    }
+  }
+
+  private applySkyFilter(grade: SkyGrade, immediate: boolean): void {
+    this.targetRgb = [...grade.matrixRgb];
+
+    if (immediate || this.state.reducedMotion) {
+      if (this.skyAnimRaf) {
+        window.cancelAnimationFrame(this.skyAnimRaf);
+        this.skyAnimRaf = 0;
+      }
+      this.currentRgb = [...this.targetRgb];
+      this.writeSkyFilterValues(this.currentRgb, grade);
+      return;
+    }
+
+    if (!this.skyAnimRaf) {
+      this.skyAnimLastTs = 0;
+      const step = (ts: number) => {
+        this.skyAnimRaf = 0;
+        if (this.isDestroyed) return;
+        const dt = Math.min(0.05, (ts - (this.skyAnimLastTs || ts)) / 1000);
+        this.skyAnimLastTs = ts;
+        const alpha = 1 - Math.exp(-dt / 0.12);
+        this.currentRgb = [
+          this.currentRgb[0] + (this.targetRgb[0] - this.currentRgb[0]) * alpha,
+          this.currentRgb[1] + (this.targetRgb[1] - this.currentRgb[1]) * alpha,
+          this.currentRgb[2] + (this.targetRgb[2] - this.currentRgb[2]) * alpha,
+        ];
+        const { grade: liveGrade } = this.computeCurrentSky();
+        this.writeSkyFilterValues(this.currentRgb, liveGrade);
+
+        const diff =
+          Math.abs(this.targetRgb[0] - this.currentRgb[0]) +
+          Math.abs(this.targetRgb[1] - this.currentRgb[1]) +
+          Math.abs(this.targetRgb[2] - this.currentRgb[2]);
+        if (diff > 0.004) {
+          this.skyAnimRaf = window.requestAnimationFrame(step);
+        } else {
+          this.currentRgb = [...this.targetRgb];
+          this.writeSkyFilterValues(this.currentRgb, liveGrade);
+        }
+      };
+      this.skyAnimRaf = window.requestAnimationFrame(step);
+    }
   }
 
   private installDirectInputController(): () => void {
@@ -249,6 +409,7 @@ export class MapViewer {
       cam.last = 0;
       runLoop();
     };
+    this.zoomStepFn = zoomStep;
 
     const pushSample = (dx: number, dy: number) => {
       const now = performance.now();
@@ -284,15 +445,19 @@ export class MapViewer {
       vp?.applyConstraints(this.state.reducedMotion);
     };
 
+    const isUiChrome = (target: EventTarget | null): boolean =>
+      target instanceof Element && Boolean(target.closest(UI_CHROME_SELECTOR));
+
     // Prevent iOS Safari native pinch-zoom from fighting the viewer
     const onGestureBlock = (ev: Event) => {
+      if (isUiChrome(ev.target)) return;
       ev.preventDefault();
     };
-    this.osdElement.addEventListener("gesturestart", onGestureBlock, { passive: false });
-    this.osdElement.addEventListener("gesturechange", onGestureBlock, { passive: false });
-    this.osdElement.addEventListener("gestureend", onGestureBlock, { passive: false });
+    this.inputRoot.addEventListener("gesturestart", onGestureBlock, { passive: false });
+    this.inputRoot.addEventListener("gesturechange", onGestureBlock, { passive: false });
+    this.inputRoot.addEventListener("gestureend", onGestureBlock, { passive: false });
 
-    // Direct touch pan + non-inverted pinch controller
+    // Direct touch pan + non-inverted pinch controller (also supports dragging from map labels)
     let touchMode: "none" | "pan" | "pinch" = "none";
     let wasPinching = false;
     let lastTouchX = 0;
@@ -306,17 +471,25 @@ export class MapViewer {
     let lastTapAt = 0;
     let lastTapX = 0;
     let lastTapY = 0;
+    let touchLabelTarget: HTMLButtonElement | null = null;
 
     const onTouchStart = (e: TouchEvent) => {
+      if (isUiChrome(e.target)) return;
       if (e.cancelable) e.preventDefault();
       stopPhysics();
       cam.samples = [];
       this.callbacks.onUserInteract?.();
 
+      const labelBtn =
+        e.target instanceof Element
+          ? e.target.closest<HTMLButtonElement>(PIN_SELECTOR)
+          : null;
+
       if (e.touches.length === 1) {
         const t = e.touches[0]!;
         touchMode = "pan";
         wasPinching = false;
+        touchLabelTarget = labelBtn;
         lastTouchX = startTouchX = t.clientX;
         lastTouchY = startTouchY = t.clientY;
         touchTotalMove = 0;
@@ -325,6 +498,7 @@ export class MapViewer {
         const t1 = e.touches[1]!;
         touchMode = "pinch";
         wasPinching = true;
+        touchLabelTarget = null;
         lastPinchDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
         lastPinchMidX = (t0.clientX + t1.clientX) * 0.5;
         lastPinchMidY = (t0.clientY + t1.clientY) * 0.5;
@@ -332,6 +506,7 @@ export class MapViewer {
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      if (touchMode === "none") return;
       if (e.cancelable) e.preventDefault();
       const vp = this.osd.viewport;
       if (!vp) return;
@@ -395,6 +570,7 @@ export class MapViewer {
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      if (touchMode === "none") return;
       if (e.touches.length === 1) {
         const t = e.touches[0]!;
         touchMode = "pan";
@@ -405,9 +581,15 @@ export class MapViewer {
       }
       if (e.touches.length === 0) {
         const isTap = !wasPinching && touchTotalMove < 10 && touchMode === "pan";
+        const tappedBtn = touchLabelTarget;
         touchMode = "none";
+        touchLabelTarget = null;
         if (isTap) {
           if (e.cancelable) e.preventDefault();
+          if (tappedBtn && tappedBtn.isConnected) {
+            tappedBtn.click();
+            return;
+          }
           const rect = this.osdElement.getBoundingClientRect();
           const pt = new OpenSeadragon.Point(startTouchX - rect.left, startTouchY - rect.top);
           const now = performance.now();
@@ -437,29 +619,38 @@ export class MapViewer {
 
     const onTouchCancel = () => {
       touchMode = "none";
+      touchLabelTarget = null;
       wasPinching = false;
       cam.samples = [];
       this.osd.viewport?.applyConstraints(this.state.reducedMotion);
     };
 
-    this.osdElement.addEventListener("touchstart", onTouchStart, { passive: false });
-    this.osdElement.addEventListener("touchmove", onTouchMove, { passive: false });
-    this.osdElement.addEventListener("touchend", onTouchEnd, { passive: false });
-    this.osdElement.addEventListener("touchcancel", onTouchCancel, { passive: false });
+    this.inputRoot.addEventListener("touchstart", onTouchStart, { passive: false });
+    this.inputRoot.addEventListener("touchmove", onTouchMove, { passive: false });
+    this.inputRoot.addEventListener("touchend", onTouchEnd, { passive: false });
+    this.inputRoot.addEventListener("touchcancel", onTouchCancel, { passive: false });
 
-    // Mouse drag + click + double-click
-    let mouseDown = false;
+    // Pointer drag + click + double-click for desktop/pen (OSD mouseNavEnabled=false keeps pointerdown unobstructed)
+    let activePointerId: number | null = null;
     let mouseMoved = 0;
     let lastMouseX = 0;
     let lastMouseY = 0;
     let lastClickAt = 0;
     let lastClickX = 0;
     let lastClickY = 0;
+    let suppressNextLabelClick = false;
+    let mouseStartedOnLabel = false;
 
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      mouseDown = true;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      if (e.button !== 0 || isUiChrome(e.target)) return;
+      activePointerId = e.pointerId;
       mouseMoved = 0;
+      mouseStartedOnLabel =
+        e.target instanceof Element && Boolean(e.target.closest(PIN_SELECTOR));
+      if (!mouseStartedOnLabel) {
+        e.preventDefault();
+      }
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
       stopPhysics();
@@ -467,21 +658,31 @@ export class MapViewer {
       this.callbacks.onUserInteract?.();
     };
 
-    const onMouseMove = (e: MouseEvent) => {
-      if (!mouseDown) return;
+    const onPointerMove = (e: PointerEvent) => {
+      if (activePointerId === null || e.pointerId !== activePointerId) return;
       const dx = e.clientX - lastMouseX;
       const dy = e.clientY - lastMouseY;
       mouseMoved += Math.hypot(dx, dy);
+      if (mouseMoved >= 3) {
+        this.inputRoot.classList.add("is-dragging");
+      }
       panPx(-dx, -dy);
       pushSample(dx, dy);
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
     };
 
-    const onMouseUp = (e: MouseEvent) => {
-      if (!mouseDown) return;
-      mouseDown = false;
+    const onPointerUp = (e: PointerEvent) => {
+      if (activePointerId === null || e.pointerId !== activePointerId) return;
+      activePointerId = null;
+      this.inputRoot.classList.remove("is-dragging");
+      const onLabel = mouseStartedOnLabel;
+      mouseStartedOnLabel = false;
       if (mouseMoved < 6) {
+        if (onLabel) {
+          // Let native button click handle label selection
+          return;
+        }
         const rect = this.osdElement.getBoundingClientRect();
         const pt = new OpenSeadragon.Point(e.clientX - rect.left, e.clientY - rect.top);
         const now = performance.now();
@@ -499,12 +700,37 @@ export class MapViewer {
         this.handleClick(pt);
         return;
       }
+      if (onLabel) {
+        suppressNextLabelClick = true;
+        window.setTimeout(() => {
+          suppressNextLabelClick = false;
+        }, 80);
+      }
       startGlideFromSamples();
     };
 
-    this.osdElement.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    const onPointerCancel = (e: PointerEvent) => {
+      if (activePointerId === null || e.pointerId !== activePointerId) return;
+      activePointerId = null;
+      this.inputRoot.classList.remove("is-dragging");
+      mouseStartedOnLabel = false;
+      cam.samples = [];
+      this.osd.viewport?.applyConstraints(this.state.reducedMotion);
+    };
+
+    const onLabelCaptureClick = (e: MouseEvent) => {
+      if (suppressNextLabelClick) {
+        suppressNextLabelClick = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    this.inputRoot.addEventListener("pointerdown", onPointerDown);
+    this.inputRoot.addEventListener("click", onLabelCaptureClick, true);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
 
     // Smooth wheel / trackpad zoom & shift-pan (bypasses OSD 50ms throttle)
     const applyWheel = () => {
@@ -528,6 +754,7 @@ export class MapViewer {
     };
 
     const onWheel = (ev: WheelEvent) => {
+      if (isUiChrome(ev.target)) return;
       ev.preventDefault();
       ev.stopPropagation();
       this.callbacks.onUserInteract?.();
@@ -562,23 +789,27 @@ export class MapViewer {
       }
     };
 
-    this.osdElement.addEventListener("wheel", onWheel, { passive: false });
+    this.inputRoot.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
+      this.zoomStepFn = null;
+      this.inputRoot.classList.remove("is-dragging");
       if (cam.raf) window.cancelAnimationFrame(cam.raf);
       if (cam.wheelRaf) window.cancelAnimationFrame(cam.wheelRaf);
       window.clearTimeout(cam.wheelSettleTimer);
-      this.osdElement.removeEventListener("gesturestart", onGestureBlock);
-      this.osdElement.removeEventListener("gesturechange", onGestureBlock);
-      this.osdElement.removeEventListener("gestureend", onGestureBlock);
-      this.osdElement.removeEventListener("touchstart", onTouchStart);
-      this.osdElement.removeEventListener("touchmove", onTouchMove);
-      this.osdElement.removeEventListener("touchend", onTouchEnd);
-      this.osdElement.removeEventListener("touchcancel", onTouchCancel);
-      this.osdElement.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      this.osdElement.removeEventListener("wheel", onWheel);
+      this.inputRoot.removeEventListener("gesturestart", onGestureBlock);
+      this.inputRoot.removeEventListener("gesturechange", onGestureBlock);
+      this.inputRoot.removeEventListener("gestureend", onGestureBlock);
+      this.inputRoot.removeEventListener("touchstart", onTouchStart);
+      this.inputRoot.removeEventListener("touchmove", onTouchMove);
+      this.inputRoot.removeEventListener("touchend", onTouchEnd);
+      this.inputRoot.removeEventListener("touchcancel", onTouchCancel);
+      this.inputRoot.removeEventListener("pointerdown", onPointerDown);
+      this.inputRoot.removeEventListener("click", onLabelCaptureClick, true);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      this.inputRoot.removeEventListener("wheel", onWheel);
     };
   }
 
@@ -588,13 +819,26 @@ export class MapViewer {
     const rect = this.osdElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
     const minZoom = computeFullMapMinZoom(this.camera, rect.width, rect.height);
+    const maxZoom = computeFullMapMaxZoom(this.camera, rect.width, rect.height);
     (vp as unknown as { minZoomLevel: number }).minZoomLevel = minZoom;
-    if (applyBounds && vp.getZoom(true) < minZoom) {
-      vp.zoomTo(minZoom, undefined, true);
+    (vp as unknown as { maxZoomLevel: number }).maxZoomLevel = maxZoom;
+    if (applyBounds) {
+      const z = vp.getZoom(true);
+      if (z < minZoom) {
+        vp.zoomTo(minZoom, undefined, true);
+      } else if (z > maxZoom) {
+        vp.zoomTo(maxZoom, undefined, true);
+      }
     }
   }
 
-  updateState(nextState: ViewerState, feedState: ResolvedFeedState | null): void {
+  updateState(
+    nextState: ViewerState,
+    feedState: ResolvedFeedState | null,
+    forceSkyRefresh = false,
+  ): void {
+    const prevSun = this.state.sunHourJst;
+    const prevTheme = this.state.theme;
     this.state = nextState;
     this.feedState = feedState;
 
@@ -606,12 +850,14 @@ export class MapViewer {
         this.updateViewportMinZoom(false);
         this.applyCameraView(savedView, true);
         this.osd.viewport?.applyConstraints(true);
-        this.renderOverlayFrame();
+        this.renderOverlayFrame(true);
       });
       this.osd.open({ tileSource: dziUrl });
     }
 
-    this.renderOverlayFrame();
+    const lightingChanged =
+      forceSkyRefresh || prevSun !== nextState.sunHourJst || prevTheme !== nextState.theme;
+    this.renderOverlayFrame(false, lightingChanged);
   }
 
   panToLonLat(lon: number, lat: number, elevM: number, zoom?: number): void {
@@ -624,7 +870,22 @@ export class MapViewer {
         rect.height > 0 ? rect.height : window.innerHeight,
       );
     const img = localToImage(this.camera, wgs84ToLocal(this.camera, lon, lat, elevM));
-    this.applyCameraView({ centerImgX: img.px, centerImgY: img.py, zoom: targetZoom }, this.state.reducedMotion);
+    this.applyCameraView(
+      { centerImgX: img.px, centerImgY: img.py, zoom: targetZoom },
+      this.state.reducedMotion,
+    );
+  }
+
+  panToImagePx(imgX: number, imgY: number, immediately = false): void {
+    if (!this.osd.viewport) return;
+    const vpPoint = this.osd.viewport.imageToViewportCoordinates(
+      Math.max(0, Math.min(this.camera.imageWidthPx, imgX)),
+      Math.max(0, Math.min(this.camera.imageHeightPx, imgY)),
+    );
+    this.osd.viewport.panTo(vpPoint, immediately || this.state.reducedMotion);
+    if (immediately) {
+      this.osd.viewport.applyConstraints(true);
+    }
   }
 
   resetView(): void {
@@ -657,6 +918,14 @@ export class MapViewer {
 
   zoomBy(factor: number): void {
     if (!this.osd.viewport) return;
+    const rect = this.osdElement.getBoundingClientRect();
+    if (this.zoomStepFn && rect.width > 0 && rect.height > 0) {
+      this.zoomStepFn(
+        factor,
+        new OpenSeadragon.Point(rect.width * 0.5, rect.height * 0.5),
+      );
+      return;
+    }
     this.osd.viewport.zoomBy(factor, undefined, this.state.reducedMotion);
     this.osd.viewport.applyConstraints(this.state.reducedMotion);
   }
@@ -734,31 +1003,30 @@ export class MapViewer {
     return maxDrift;
   }
 
-  renderOverlayFrame(): void {
+  renderOverlayFrame(immediateSky = false, updateSky = true): void {
     if (this.isDestroyed) return;
+    const { grade } = this.computeCurrentSky();
+    if (updateSky || immediateSky) {
+      this.applySkyFilter(grade, immediateSky);
+    }
+
     const bounds = this.getViewportImageBounds();
     if (!bounds) return;
 
-    const nowDate =
-      this.state.sunHourJst === null
-        ? new Date()
-        : (() => {
-            const h = Math.floor(this.state.sunHourJst);
-            const m = Math.round((this.state.sunHourJst - h) * 60);
-            // Convert JST (UTC+9) to UTC
-            return new Date(Date.UTC(2026, 10, 24, h - 9, m, 0));
-          })();
-
-    const sun = computeYokohamaSun(nowDate);
     const selectedVehicleId =
       this.state.selected?.kind === "vehicle" ? this.state.selected.vehicle.entityId : null;
+    const selectedPortCallId =
+      this.state.selected?.kind === "portcall" ? this.state.selected.portCall.id : null;
 
     this.glOverlay.render({
       viewTopLeftImgPx: bounds.topLeft,
       viewBottomRightImgPx: bounds.bottomRight,
       viewportCssWidth: bounds.cssWidth,
       viewportCssHeight: bounds.cssHeight,
-      sunTintRgba: sun.overlayRgba,
+      glowTintRgba: grade.glowRgba,
+      nightIntensity: grade.nightLights,
+      vehicleBrightness: grade.vehicleBrightness,
+      simTimeSec: this.state.simTimeSec,
       showDepthMap: this.state.showDepthMap,
       xrayOcclusion: this.state.xrayOcclusion,
       showTileGrid: this.state.showTileGrid,
@@ -766,6 +1034,7 @@ export class MapViewer {
       showDeckTestPoint: this.state.showDeckTestPoint,
       vehicles: this.state.showBuses ? (this.feedState?.vehicles ?? []) : [],
       selectedVehicleId,
+      selectedPortCallId,
       gcps: this.bundle.gcps,
       deckTestPoint: this.bundle.deckTestPoint,
       portCalls: this.state.showBoats ? (this.feedState?.portCalls ?? []) : [],
@@ -793,17 +1062,18 @@ export class MapViewer {
       }
     }
 
-    // 2. Check scheduled port calls
+    // 2. Check scheduled port calls & harbor vessels
     if (this.feedState && this.state.showBoats) {
       for (const pc of this.feedState.portCalls) {
         const pcImg = localToImage(
           this.camera,
-          wgs84ToLocal(this.camera, pc.lon, pc.lat, 3.5),
+          wgs84ToLocal(this.camera, pc.lon, pc.lat, (pc.heightM ?? 6) * 0.45),
         );
         const pcScreen = this.osd.viewport.imageToViewerElementCoordinates(
           new OpenSeadragon.Point(pcImg.px, pcImg.py),
         );
-        if (Math.hypot(viewerPos.x - pcScreen.x, viewerPos.y - pcScreen.y) <= 20) {
+        const hitRadius = Math.max(24, Math.min(44, (pc.lengthM ?? 24) * 0.45));
+        if (Math.hypot(viewerPos.x - pcScreen.x, viewerPos.y - pcScreen.y) <= hitRadius) {
           this.callbacks.onSelectPortCall(pc);
           return;
         }
@@ -848,8 +1118,10 @@ export class MapViewer {
 
   destroy(): void {
     this.isDestroyed = true;
+    if (this.skyAnimRaf) window.cancelAnimationFrame(this.skyAnimRaf);
     this.cleanupInput();
     this.resizeObserver.disconnect();
+    this.skyFilterSvg?.remove();
     this.osd.destroy();
   }
 }

@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Small Yokohama · スモール横浜</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#ebe6dc" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@400;500;600&family=Shippori+Mincho:wght@500;600&display=swap" />
@@ -11,16 +17,20 @@
   <body>
     <main id="map-stage" class="map-stage" aria-label="Interactive illustrated map of Yokohama waterfront">
       <div id="osd-container" class="osd-container"></div>
+      <div id="sky-tint" class="sky-tint" aria-hidden="true"></div>
       <canvas id="webgl-overlay" class="webgl-overlay" aria-hidden="true"></canvas>
+      <div id="transit-layer" class="transit-layer" aria-hidden="true"></div>
       <div id="label-layer" class="label-layer" aria-hidden="true"></div>
     </main>
 
+    <div id="veil" class="veil" aria-hidden="true"></div>
     <header id="bar" class="bar"></header>
     <div id="drop" class="drop" hidden></div>
     <div id="toast" class="toast gone" role="status" aria-live="polite" hidden></div>
     <div id="card" class="card" hidden></div>
     <div id="status" class="status" aria-live="polite"></div>
     <div id="sq" class="sq"></div>
+    <div id="minimap" class="minimap" hidden></div>
     <div id="credit" class="credit"></div>
     <div id="about-modal" class="modal-backdrop" hidden></div>
 

@@ -1,14 +1,22 @@
 import {
-  SURFACE_KIND,
   computeYokohamaSun,
+  type Landmark,
   type PoiRecord,
-  type PortCallRecord,
-  type SurfaceKind,
 } from "@small-yokohama/core";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
-import type { ResolvedFeedState } from "../data/vehicleFeed.js";
-import { getDict } from "../i18n.js";
+import type { AnimatedPortCall, ResolvedFeedState } from "../data/vehicleFeed.js";
+import {
+  formatAddress,
+  formatCategory,
+  formatDeckId,
+  formatSourceKind,
+  formatSurfaceKind,
+  formatTimeStatusText,
+  getDict,
+  type Lang,
+} from "../i18n.js";
 import type { DropTab, FeedPreset, MapVariant, ViewerState } from "../state.js";
+import { getSkyPresetsForDate, getSunDateForHourJst } from "../viewer/skyLighting.js";
 
 export type BooleanOptionKey =
   | "showBuses"
@@ -25,7 +33,7 @@ export interface UiHandlers {
   onSetTab: (tab: DropTab) => void;
   onSearchQuery: (q: string) => void;
   onToggleTv: () => void;
-  onShare: () => Promise<boolean>;
+  onShare: (anchorEl?: HTMLElement | null) => Promise<boolean>;
   onToggleAbout: (open: boolean) => void;
   onToggleLang: () => void;
   onToggleTheme: () => void;
@@ -40,7 +48,7 @@ export interface UiHandlers {
   onToggleOption: (key: BooleanOptionKey) => void;
   onSelectLandmarkId: (id: string) => void;
   onSelectPoi: (poi: PoiRecord) => void;
-  onSelectPortCall: (pc: PortCallRecord) => void;
+  onSelectPortCall: (pc: AnimatedPortCall) => void;
   onClearSelection: () => void;
 }
 
@@ -51,18 +59,6 @@ function escapeHtml(text: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
-
-const SURFACE_KIND_LABEL: Record<SurfaceKind, string> = {
-  [SURFACE_KIND.VOID]: "void",
-  [SURFACE_KIND.WATER]: "water",
-  [SURFACE_KIND.GROUND]: "ground",
-  [SURFACE_KIND.ROAD]: "road",
-  [SURFACE_KIND.BUILDING]: "building",
-  [SURFACE_KIND.BRIDGE_DECK]: "bridge",
-  [SURFACE_KIND.BRIDGE_SUPPORT]: "support",
-  [SURFACE_KIND.QUAY]: "quay",
-  [SURFACE_KIND.VEGETATION]: "park",
-};
 
 function buildGoogleMapsUrl(lat: number, lon: number, label?: string): string {
   const q = label
@@ -101,13 +97,13 @@ export function renderBar(
     handlers.onSetTab(state.activeTab === "layers" ? null : "layers");
   });
   el.querySelector("#btn-tv")?.addEventListener("click", handlers.onToggleTv);
-  el.querySelector("#btn-share")?.addEventListener("click", async () => {
-    const ok = await handlers.onShare();
-    const btn = el.querySelector("#btn-share");
-    if (ok && btn) {
+  el.querySelector("#btn-share")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    const ok = await handlers.onShare(btn);
+    if (ok && btn.isConnected) {
       btn.textContent = d.navCopied;
       window.setTimeout(() => {
-        btn.textContent = d.navShare;
+        if (btn.isConnected) btn.textContent = d.navShare;
       }, 1500);
     }
   });
@@ -128,7 +124,7 @@ function buildSearchResultsHtml(
   type SearchHit =
     | { kind: "landmark"; id: string; title: string; sub: string; score: number }
     | { kind: "poi"; poi: PoiRecord; title: string; sub: string; score: number }
-    | { kind: "portcall"; pc: PortCallRecord; title: string; sub: string; score: number };
+    | { kind: "portcall"; pc: AnimatedPortCall; title: string; sub: string; score: number };
 
   const hits: SearchHit[] = [];
   const seenKeys = new Set<string>();
@@ -141,7 +137,7 @@ function buildSearchResultsHtml(
         kind: "landmark",
         id: lm.id,
         title,
-        sub: lm.category,
+        sub: formatCategory(lm.category, state.lang),
         score: lm.tier === 1 ? 0 : 1,
       });
       seenKeys.add(`${lm.nameJa.toLowerCase()}|${lm.nameEn.toLowerCase()}`);
@@ -158,7 +154,7 @@ function buildSearchResultsHtml(
         kind: "poi",
         poi,
         title,
-        sub: poi.category,
+        sub: formatCategory(poi.category, state.lang),
         score: poi.tier + (title.toLowerCase().startsWith(q) && q ? -1 : 1),
       });
     }
@@ -183,7 +179,7 @@ function buildSearchResultsHtml(
   const top = hits.slice(0, 28);
 
   if (top.length === 0) {
-    return `<li style="padding:8px 9px;color:var(--u-mute);font-size:13px;">${escapeHtml(d.searchEmpty)}</li>`;
+    return `<li class="search-empty">${escapeHtml(d.searchEmpty)}</li>`;
   }
 
   return top
@@ -225,6 +221,79 @@ function bindListSelections(
       if (pc) handlers.onSelectPortCall(pc);
     });
   });
+}
+
+function renderPlacesGroupsHtml(
+  state: ViewerState,
+  bundle: LoadedReleaseBundle,
+  feed: ResolvedFeedState | null,
+): string {
+  const d = getDict(state.lang);
+  const landmarks: Landmark[] = [];
+  const piersAndBridges: Landmark[] = [];
+  const parks: Landmark[] = [];
+
+  for (const lm of bundle.landmarks) {
+    if (lm.category === "park") parks.push(lm);
+    else if (lm.category === "pier" || lm.category === "bridge") piersAndBridges.push(lm);
+    else landmarks.push(lm);
+  }
+
+  const renderGroup = (heading: string, list: readonly Landmark[]) => {
+    if (list.length === 0) return "";
+    return `
+      <section class="places-group">
+        <h3>${escapeHtml(heading)}</h3>
+        <ul>
+          ${list
+            .map(
+              (lm) => `
+            <li>
+              <button type="button" data-landmark-id="${escapeHtml(lm.id)}">
+                ${escapeHtml(state.lang === "en" ? lm.nameEn : lm.nameJa)}
+              </button>
+            </li>`,
+            )
+            .join("")}
+        </ul>
+      </section>
+    `;
+  };
+
+  const portCalls = feed?.portCalls ?? [];
+  const shipsHtml =
+    portCalls.length === 0
+      ? ""
+      : `
+      <section class="places-group">
+        <h3>${escapeHtml(d.placesGroups.ships)}</h3>
+        <ul>
+          ${portCalls
+            .map(
+              (pc) => `
+            <li>
+              <button type="button" data-portcall-id="${escapeHtml(pc.id)}">
+                ${escapeHtml(state.lang === "en" ? pc.vesselNameEn : pc.vesselNameJa)}
+              </button>
+            </li>`,
+            )
+            .join("")}
+        </ul>
+      </section>
+    `;
+
+  return (
+    renderGroup(d.placesGroups.landmarks, landmarks) +
+    renderGroup(d.placesGroups.piers, piersAndBridges) +
+    renderGroup(d.placesGroups.parks, parks) +
+    shipsHtml
+  );
+}
+
+function isSkyPresetActive(currentHour: number | null, presetHour: number | null): boolean {
+  if (presetHour === null) return currentHour === null;
+  if (currentHour === null) return false;
+  return Math.abs(currentHour - presetHour) < 0.08;
 }
 
 export function renderDrop(
@@ -287,41 +356,25 @@ export function renderDrop(
   delete el.dataset.renderKey;
 
   if (state.activeTab === "places") {
-    const portCalls = feed?.portCalls ?? [];
-    el.innerHTML = `
-      <ul class="results">
-        ${bundle.landmarks
-          .map(
-            (lm) => `
-          <li>
-            <button type="button" data-landmark-id="${escapeHtml(lm.id)}">
-              <span class="r-name">${escapeHtml(state.lang === "en" ? lm.nameEn : lm.nameJa)}</span>
-              <span class="r-sub">${escapeHtml(lm.category)} · ${lm.elevationM.toFixed(0)}m</span>
-            </button>
-          </li>`,
-          )
-          .join("")}
-        ${portCalls
-          .map(
-            (pc) => `
-          <li>
-            <button type="button" data-portcall-id="${escapeHtml(pc.id)}">
-              <span class="r-name">${escapeHtml(state.lang === "en" ? pc.vesselNameEn : pc.vesselNameJa)}</span>
-              <span class="r-sub">${escapeHtml(state.lang === "en" ? pc.berthEn : pc.berthJa)}</span>
-            </button>
-          </li>`,
-          )
-          .join("")}
-      </ul>
-    `;
+    el.innerHTML = `<div class="page">${renderPlacesGroupsHtml(state, bundle, feed)}</div>`;
     bindListSelections(el, bundle, feed, handlers);
     return;
   }
 
-  // Layers tab (Small SF typographic list with counts)
+  // Layers tab (Small SF typographic toggles + compact Sky pills + Dev/QA accordion)
   const busCount = feed?.vehicles.length ?? 0;
   const boatCount = feed?.portCalls.length ?? 0;
-  const sunValue = state.sunHourJst === null ? "live" : String(state.sunHourJst);
+  const busLabel = state.lang === "en" ? `${busCount} live` : `${busCount}台`;
+  const boatLabel = state.lang === "en" ? `${boatCount} scheduled` : `${boatCount}隻`;
+  const presets = getSkyPresetsForDate(new Date());
+  const skyItems: Array<{ label: string; value: number | null }> = [
+    { label: d.skyPresets.day, value: presets.day },
+    { label: d.skyPresets.golden, value: presets.golden },
+    { label: d.skyPresets.dusk, value: presets.dusk },
+    { label: d.skyPresets.night, value: presets.night },
+    { label: d.skyPresets.live, value: presets.live },
+  ];
+
   const debugToggle = (key: BooleanOptionKey, label: string, checked: boolean) => `
     <label class="debug-row">
       <span>${escapeHtml(label)}</span>
@@ -333,55 +386,55 @@ export function renderDrop(
     <div class="layers">
       <button type="button" class="layer-btn" data-toggle="showBuses" aria-pressed="${state.showBuses}">
         <span>${escapeHtml(d.layerBuses)}</span>
-        <small>${busCount}</small>
+        <small>${escapeHtml(busLabel)}</small>
       </button>
       <button type="button" class="layer-btn" data-toggle="showBoats" aria-pressed="${state.showBoats}">
         <span>${escapeHtml(d.layerBoats)}</span>
-        <small>${boatCount}</small>
+        <small>${escapeHtml(boatLabel)}</small>
       </button>
       <button type="button" class="layer-btn" data-toggle="showLabels" aria-pressed="${state.showLabels}">
         <span>${escapeHtml(d.layerLabels)}</span>
         <small>${bundle.pois.length}</small>
       </button>
       <button type="button" class="layer-btn" id="btn-play" aria-pressed="${state.playing}">
-        <span>${escapeHtml(state.lang === "en" ? "Simulation" : "アニメーション")}</span>
-        <small>${escapeHtml(state.playing ? d.pauseBtn : d.playBtn)}</small>
+        <span>${escapeHtml(d.layerMotion)}</span>
+        <small>${escapeHtml(state.playing ? d.playBtn : d.pauseBtn)}</small>
       </button>
 
-      <div class="layer-subrow">
-        <label for="sel-variant">${escapeHtml(d.layerStyle)}</label>
-        <select id="sel-variant">
-          <option value="illustrated" ${state.variant === "illustrated" ? "selected" : ""}>${escapeHtml(d.styleIllustrated)}</option>
-          <option value="plain" ${state.variant === "plain" ? "selected" : ""}>${escapeHtml(d.stylePlain)}</option>
-        </select>
-      </div>
-
-      <div class="layer-subrow">
-        <label for="sel-sun">${escapeHtml(d.layerSky)}</label>
-        <select id="sel-sun">
-          <option value="live" ${sunValue === "live" ? "selected" : ""}>${escapeHtml(d.skyRealtime)}</option>
-          <option value="9.5" ${sunValue === "9.5" ? "selected" : ""}>09:30 JST</option>
-          <option value="15.5" ${sunValue === "15.5" ? "selected" : ""}>15:30 JST</option>
-          <option value="17.25" ${sunValue === "17.25" ? "selected" : ""}>17:15 JST</option>
-          <option value="20" ${sunValue === "20" ? "selected" : ""}>20:00 JST</option>
-        </select>
-      </div>
-
-      <div class="layer-subrow">
-        <label for="sel-feed">${escapeHtml(d.feedLabel)}</label>
-        <select id="sel-feed">
-          ${(Object.keys(d.feedOptions) as FeedPreset[])
-            .map(
-              (k) =>
-                `<option value="${k}" ${state.feedPreset === k ? "selected" : ""}>${escapeHtml(d.feedOptions[k])}</option>`,
-            )
+      <div class="sky-row">
+        <span class="sky-row-label">${escapeHtml(d.layerSky)}</span>
+        <div class="sky-pills" role="group" aria-label="${escapeHtml(d.layerSky)}">
+          ${skyItems
+            .map((item) => {
+              const active = isSkyPresetActive(state.sunHourJst, item.value);
+              const valStr = item.value === null ? "live" : String(item.value);
+              return `<button type="button" class="sky-pill${active ? " active" : ""}" data-sun="${valStr}" aria-pressed="${active}">${escapeHtml(item.label)}</button>`;
+            })
             .join("")}
-        </select>
+        </div>
       </div>
 
       <details class="debug-details">
-        <summary>${escapeHtml(d.qaGroupTitle)}</summary>
+        <summary>${escapeHtml(d.devQaTitle)}</summary>
         <div class="debug-list">
+          <div class="layer-subrow">
+            <label for="sel-variant">${escapeHtml(d.layerStyle)}</label>
+            <select id="sel-variant">
+              <option value="illustrated" ${state.variant === "illustrated" ? "selected" : ""}>${escapeHtml(d.styleIllustrated)}</option>
+              <option value="plain" ${state.variant === "plain" ? "selected" : ""}>${escapeHtml(d.stylePlain)}</option>
+            </select>
+          </div>
+          <div class="layer-subrow">
+            <label for="sel-feed">${escapeHtml(d.feedLabel)}</label>
+            <select id="sel-feed">
+              ${(Object.keys(d.feedOptions) as FeedPreset[])
+                .map(
+                  (k) =>
+                    `<option value="${k}" ${state.feedPreset === k ? "selected" : ""}>${escapeHtml(d.feedOptions[k])}</option>`,
+                )
+                .join("")}
+            </select>
+          </div>
           ${debugToggle("showDepthMap", d.toggleDepth, state.showDepthMap)}
           ${debugToggle("xrayOcclusion", d.toggleXray, state.xrayOcclusion)}
           ${debugToggle("showTileGrid", d.toggleTileGrid, state.showTileGrid)}
@@ -400,12 +453,15 @@ export function renderDrop(
     });
   });
 
+  el.querySelectorAll<HTMLButtonElement>("button[data-sun]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const v = btn.dataset.sun;
+      handlers.onChangeSunHour(!v || v === "live" ? null : Number(v));
+    });
+  });
+
   el.querySelector("#sel-variant")?.addEventListener("change", (e) => {
     handlers.onChangeVariant((e.target as HTMLSelectElement).value as MapVariant);
-  });
-  el.querySelector("#sel-sun")?.addEventListener("change", (e) => {
-    const val = (e.target as HTMLSelectElement).value;
-    handlers.onChangeSunHour(val === "live" ? null : Number(val));
   });
   el.querySelector("#sel-feed")?.addEventListener("change", (e) => {
     handlers.onChangeFeed((e.target as HTMLSelectElement).value as FeedPreset);
@@ -457,9 +513,9 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.direction)}</dt>
       <dd>${escapeHtml(state.lang === "en" ? v.directionLabelEn : v.directionLabelJa)}</dd>
       <dt>${escapeHtml(d.fields.deck)}</dt>
-      <dd>${escapeHtml(v.deckId)} (+${v.roadElevationM.toFixed(1)}m)</dd>
+      <dd>${escapeHtml(formatDeckId(v.deckId, state.lang))} (+${v.roadElevationM.toFixed(1)}m)</dd>
       <dt>${escapeHtml(d.fields.observedAt)}</dt>
-      <dd>${escapeHtml(v.observedAt ?? "null")}</dd>
+      <dd>${escapeHtml(v.observedAt ?? (state.lang === "en" ? "N/A" : "なし"))}</dd>
       <dt>${escapeHtml(d.fields.age)}</dt>
       <dd>${ageSec === null ? "n/a" : `${Math.round(ageSec)}s`}</dd>
       <dt>${escapeHtml(d.fields.drift)}</dt>
@@ -469,59 +525,79 @@ export function renderCard(
   } else if (sel.kind === "landmark") {
     const lm = sel.landmark;
     title = state.lang === "en" ? lm.nameEn : lm.nameJa;
-    sub = state.lang === "en" ? lm.nameJa : lm.nameEn;
-    badgeHtml = `<span class="badge">${escapeHtml(lm.category)}</span>`;
+    sub = state.lang === "en" ? "" : lm.nameEn;
+    badgeHtml = `<span class="badge">${escapeHtml(formatCategory(lm.category, state.lang))}</span>`;
     bodyNote = `<p class="card-sub" style="margin-top:6px;">${escapeHtml(state.lang === "en" ? lm.descriptionEn : lm.descriptionJa)}</p>`;
+    const addr = lm.address ? formatAddress(lm.address, state.lang) : "";
     rowsHtml = `
       ${lm.heightM ? `<dt>${escapeHtml(d.fields.height)}</dt><dd>${lm.heightM.toFixed(1)} m</dd>` : ""}
       ${lm.levels ? `<dt>${escapeHtml(d.fields.levels)}</dt><dd>${lm.levels}</dd>` : ""}
-      ${lm.address ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(lm.address)}</dd>` : ""}
+      ${addr ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(addr)}</dd>` : ""}
       <dt>${escapeHtml(d.fields.source)}</dt>
-      <dd>${escapeHtml(lm.sourceKind)}</dd>
+      <dd>${escapeHtml(formatSourceKind(lm.sourceKind, state.lang))}</dd>
     `;
-    gmapsUrl = lm.googleMapsUrl ?? buildGoogleMapsUrl(lm.lat, lm.lon, lm.nameJa);
+    gmapsUrl = lm.googleMapsUrl ?? buildGoogleMapsUrl(lm.lat, lm.lon, title);
   } else if (sel.kind === "poi") {
     const p = sel.poi;
     title = (state.lang === "en" ? p.nameEn : p.nameJa) || p.nameJa || p.nameEn;
-    sub = state.lang === "en" ? p.nameJa : p.nameEn;
-    badgeHtml = `<span class="badge">${escapeHtml(p.category)}</span>`;
+    sub = state.lang === "en" ? "" : p.nameEn;
+    badgeHtml = `<span class="badge">${escapeHtml(formatCategory(p.category, state.lang))}</span>`;
     bodyNote = `<p class="card-sub" style="margin-top:6px;">${escapeHtml(state.lang === "en" ? p.descriptionEn : p.descriptionJa)}</p>`;
+    const addr = p.address ? formatAddress(p.address, state.lang) : "";
     rowsHtml = `
       ${p.heightM ? `<dt>${escapeHtml(d.fields.height)}</dt><dd>${p.heightM.toFixed(1)} m</dd>` : ""}
       ${p.levels ? `<dt>${escapeHtml(d.fields.levels)}</dt><dd>${p.levels}</dd>` : ""}
-      ${p.address ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(p.address)}</dd>` : ""}
+      ${addr ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(addr)}</dd>` : ""}
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>OpenStreetMap${p.osmId ? ` (#${p.osmId})` : ""}</dd>
     `;
-    gmapsUrl = p.googleMapsUrl || buildGoogleMapsUrl(p.lat, p.lon, p.nameJa);
+    gmapsUrl = p.googleMapsUrl || buildGoogleMapsUrl(p.lat, p.lon, title);
   } else if (sel.kind === "feature") {
     const f = sel.feature;
     title = (state.lang === "en" ? f.nameEn : f.nameJa) || f.slug;
     sub = `${sel.lat.toFixed(5)}, ${sel.lon.toFixed(5)}`;
-    badgeHtml = `<span class="badge">${escapeHtml(SURFACE_KIND_LABEL[f.surfaceKind] ?? "feature")}</span>`;
+    badgeHtml = `<span class="badge">${escapeHtml(formatSurfaceKind(f.surfaceKind, state.lang))}</span>`;
+    const addr = f.address ? formatAddress(f.address, state.lang) : "";
     rowsHtml = `
       <dt>${escapeHtml(d.fields.height)}</dt>
       <dd>${f.heightM.toFixed(1)} m</dd>
       ${f.levels ? `<dt>${escapeHtml(d.fields.levels)}</dt><dd>${f.levels}</dd>` : ""}
-      ${f.address ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(f.address)}</dd>` : ""}
+      ${addr ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(addr)}</dd>` : ""}
       <dt>${escapeHtml(d.fields.source)}</dt>
-      <dd>${escapeHtml(f.source)}${f.osmId ? ` (#${f.osmId})` : ""}</dd>
+      <dd>${escapeHtml(formatSourceKind(f.source, state.lang))}${f.osmId ? ` (#${f.osmId})` : ""}</dd>
     `;
     gmapsUrl = f.googleMapsUrl ?? buildGoogleMapsUrl(sel.lat, sel.lon, title);
   } else {
-    const pc = sel.portCall;
-    title = state.lang === "en" ? pc.vesselNameEn : pc.vesselNameJa;
-    sub = state.lang === "en" ? pc.berthEn : pc.berthJa;
-    badgeHtml = `<span class="badge">${escapeHtml(d.modeLabels.scheduled)}</span>`;
+    const pcLive =
+      feed?.portCalls.find((x) => x.id === sel.portCall.id) ?? sel.portCall;
+    const kind = pcLive.vesselKind ?? "cruise";
+    const kindLabel = d.vesselKinds[kind];
+    const isMoving = pcLive.moving !== false;
+    const statusText = isMoving
+      ? pcLive.speedKnots
+        ? `${d.underwayLabel} · ${pcLive.speedKnots.toFixed(1)} kt`
+        : d.underwayLabel
+      : d.berthedLabel;
+    title = state.lang === "en" ? pcLive.vesselNameEn : pcLive.vesselNameJa;
+    const berth = state.lang === "en" ? pcLive.berthEn : pcLive.berthJa;
+    sub = `${pcLive.lat.toFixed(5)}, ${pcLive.lon.toFixed(5)}`;
+    badgeHtml = `<span class="badge ${isMoving ? "observed" : ""}">${escapeHtml(kindLabel)}</span>`;
     rowsHtml = `
+      <dt>${escapeHtml(d.fields.status)}</dt>
+      <dd>${escapeHtml(statusText)}</dd>
       <dt>${escapeHtml(d.fields.berth)}</dt>
-      <dd>${escapeHtml(sub)}</dd>
+      <dd>${escapeHtml(berth)}</dd>
+      ${
+        pcLive.lengthM && pcLive.widthM
+          ? `<dt>${escapeHtml(d.fields.size)}</dt><dd>${pcLive.lengthM.toFixed(0)}m × ${pcLive.widthM.toFixed(1)}m</dd>`
+          : ""
+      }
       <dt>${escapeHtml(d.fields.schedule)}</dt>
-      <dd>${escapeHtml(pc.arrivalTime)} → ${escapeHtml(pc.departureTime)}</dd>
+      <dd>${escapeHtml(pcLive.arrivalTime)} → ${escapeHtml(pcLive.departureTime)}</dd>
       <dt>${escapeHtml(d.fields.source)}</dt>
-      <dd>${escapeHtml(pc.source)}</dd>
+      <dd>${escapeHtml(pcLive.source)}</dd>
     `;
-    gmapsUrl = buildGoogleMapsUrl(pc.lat, pc.lon, title);
+    gmapsUrl = buildGoogleMapsUrl(pcLive.lat, pcLive.lon, title);
   }
 
   el.innerHTML = `
@@ -531,7 +607,7 @@ export function renderCard(
         <h2 class="card-title">${escapeHtml(title)}</h2>
         ${sub && sub !== title ? `<p class="card-sub">${escapeHtml(sub)}</p>` : ""}
       </div>
-      <button type="button" class="card-close" id="btn-card-close" aria-label="Close">×</button>
+      <button type="button" class="card-close" id="btn-card-close" aria-label="${escapeHtml(d.closeLabel)}">×</button>
     </div>
     ${badgeHtml}
     ${bodyNote}
@@ -548,25 +624,11 @@ export function renderStatus(
   feed: ResolvedFeedState | null,
 ): void {
   const d = getDict(state.lang);
-
-  let jstText = "";
-  let sunDate: Date;
-  if (state.sunHourJst === null) {
-    sunDate = new Date();
-    jstText = new Intl.DateTimeFormat(state.lang === "en" ? "en-US" : "ja-JP", {
-      timeZone: "Asia/Tokyo",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(sunDate);
-  } else {
-    const h = Math.floor(state.sunHourJst);
-    const m = Math.round((state.sunHourJst - h) * 60);
-    sunDate = new Date(Date.UTC(2026, 10, 24, h - 9, m, 0));
-    jstText = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  }
-
+  const sunDate = getSunDateForHourJst(state.sunHourJst);
   const sun = computeYokohamaSun(sunDate);
+  const timeText = formatTimeStatusText(sunDate, state.lang);
+  const skyText = d.skyDescriptions[sun.phase];
+
   const dotCls =
     !feed || feed.feedHealth === "ok"
       ? ""
@@ -576,24 +638,17 @@ export function renderStatus(
 
   const busCount = state.showBuses ? (feed?.vehicles.length ?? 0) : 0;
   const boatCount = state.showBoats ? (feed?.portCalls.length ?? 0) : 0;
-  const skyText =
-    state.lang === "en"
-      ? `${sun.phase} sky`
-      : sun.phase === "night"
-        ? "夜空"
-        : sun.phase === "twilight"
-          ? "夕暮れ"
-          : sun.phase === "golden"
-            ? "茜色の光"
-            : "晴天";
-  const tvSuffix = state.tvMode ? ` · ${escapeHtml(d.tvTourLabel)}` : "";
+  const tvSuffix = state.tvMode ? `<span class="g">${escapeHtml(d.tvTourLabel)}</span>` : "";
 
-  const text =
+  const countsHtml =
     state.lang === "en"
-      ? `${busCount} buses · ${boatCount} ships${tvSuffix}`
-      : `バス ${busCount} · 客船 ${boatCount}${tvSuffix}`;
+      ? `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span><span class="live-n">${busCount}</span> buses</span><span class="g"><span class="live-n">${boatCount}</span> ships</span>`
+      : `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>バス <span class="live-n">${busCount}</span></span><span class="g">客船 <span class="live-n">${boatCount}</span></span>`;
 
-  el.innerHTML = `<span class="status-when">${jstText} JST · ${escapeHtml(skyText)}</span><span><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>${text}</span>`;
+  const nextHtml = `<span class="status-when">${escapeHtml(timeText)}</span><span class="status-now"><span class="g">${escapeHtml(skyText)}</span>${countsHtml}${tvSuffix}</span>`;
+  if (el.innerHTML !== nextHtml) {
+    el.innerHTML = nextHtml;
+  }
 }
 
 export function renderSq(
@@ -603,22 +658,25 @@ export function renderSq(
 ): void {
   const d = getDict(state.lang);
   const isDark = state.theme === "dark";
+  const themeTip = isDark ? d.switchToLight : d.switchToDark;
+  const docAny = document as unknown as { webkitFullscreenEnabled?: boolean };
+  const canFullscreen = Boolean(document.fullscreenEnabled || docAny.webkitFullscreenEnabled);
 
   el.innerHTML = `
-    <button type="button" id="btn-theme" title="${isDark ? "Light theme" : "Dark theme"}" aria-label="Toggle theme">
+    <button type="button" id="btn-theme" title="${escapeHtml(themeTip)}" aria-label="${escapeHtml(themeTip)}">
       ${
         isDark
           ? `<svg viewBox="0 0 24 24" class="i-sun"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"/></svg>`
           : `<svg viewBox="0 0 24 24" class="i-moon"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>`
       }
     </button>
-    <button type="button" id="btn-zoom-in" title="Zoom in (+)" aria-label="Zoom in">
+    <button type="button" id="btn-zoom-in" title="${escapeHtml(d.zoomInTip)}" aria-label="${escapeHtml(d.zoomInTip)}">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
     </button>
-    <button type="button" id="btn-zoom-out" title="Zoom out (-)" aria-label="Zoom out">
+    <button type="button" id="btn-zoom-out" title="${escapeHtml(d.zoomOutTip)}" aria-label="${escapeHtml(d.zoomOutTip)}">
       <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
     </button>
-    <button type="button" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
+    <button type="button" id="btn-fullscreen" ${canFullscreen ? "" : "hidden"} title="${escapeHtml(d.fullscreenTip)}" aria-label="${escapeHtml(d.fullscreenTip)}">
       <svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
     </button>
     <button type="button" class="compass" id="btn-compass" title="${escapeHtml(d.compassTip)}" aria-label="${escapeHtml(d.compassTip)}">
@@ -639,6 +697,22 @@ export function renderSq(
   el.querySelector("#btn-compass")?.addEventListener("click", handlers.onResetView);
 }
 
+function sanitizeCreditField(text: string, lang: Lang): string {
+  if (lang !== "en") return text;
+  const map: Record<string, string> = {
+    "Geospatial Information Authority of Japan (国土地理院)":
+      "Geospatial Information Authority of Japan (GSI)",
+    "GSI Seamless Photo (地理院タイル シームレス写真 z=18)":
+      "GSI Seamless Photo (Orthorectified Aerial Tiles z=18)",
+    "GSI Terms of Use (出典明記で自由利用可)":
+      "GSI Terms of Use (Free with attribution)",
+    "Yokohama Municipal Bus / ODPT":
+      "Yokohama Municipal Bus / ODPT",
+  };
+  if (map[text]) return map[text];
+  return text.replace(/（[^）]*[\u3040-\u30ff\u3400-\u9fff][^）]*）/g, "").replace(/\s+/g, " ").trim();
+}
+
 export function renderCreditAndAboutModal(
   creditEl: HTMLElement,
   modalEl: HTMLElement,
@@ -648,7 +722,7 @@ export function renderCreditAndAboutModal(
 ): void {
   const d = getDict(state.lang);
 
-  creditEl.innerHTML = `© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors · <button type="button" id="btn-credit-about" style="padding:0;text-decoration:underline;">${escapeHtml(d.navAbout)}</button>`;
+  creditEl.innerHTML = `© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors · <button type="button" id="btn-credit-about" style="padding:0;text-decoration:underline;">${escapeHtml(d.creditAbout)}</button>`;
   creditEl.querySelector("#btn-credit-about")?.addEventListener("click", () => {
     handlers.onToggleAbout(true);
   });
@@ -660,7 +734,7 @@ export function renderCreditAndAboutModal(
   const notice = state.lang === "en" ? bundle.release.sceneNotice.en : bundle.release.sceneNotice.ja;
   const apiNote =
     state.lang === "en"
-      ? "OpenStreetMap API v0.6 / ODbL geometry and POIs work with zero API registration. Google Maps place links use standard Search deep-links (no key needed). Optional live Yokohama bus feeds use ODPT_ACCESS_TOKEN in collector/."
+      ? "OpenStreetMap API v0.6 / ODbL geometry and POIs require no API registration. Google Maps links open standard Search deep-links (key-free). Optional live Yokohama bus feeds use ODPT_ACCESS_TOKEN in collector/."
       : "OpenStreetMap API v0.6 (ODbL) の建物形状・道路・海岸線・POIは API キー登録なしで取得・反映しています。Google マップへのリンクは標準の検索ディープリンクを使用（キー不要）、横浜市営バスの実測連携のみ ODPT API トークン登録が任意で必要です。";
 
   const tileMethodNote =
@@ -668,11 +742,14 @@ export function renderCreditAndAboutModal(
       ? "Built tile-by-tile (Small SF method): a pixel-locked 45° orthographic base in EPSG:6677 is redrawn block-by-block into Ligne-Claire illustration, composited with the strict 3D water mask, and stitched along 14px DP seams across 23 Yokohama tiles."
       : "Small SF 手法に倣ったタイル制作パイプライン：EPSG:6677 の45度正投影基準レンダーを全23ブロック単位で Ligne-Claire 風イラストへ再描画し、3D 海面マスク合成と DP 14px 継ぎ目ブレンドで 15,488×5,888 px の1枚絵に統合しています。";
 
+  const versionLabel = state.lang === "en" ? "Version" : "バージョン";
+  const retrievedLabel = state.lang === "en" ? "Retrieved" : "取得日";
+
   modalEl.innerHTML = `
     <div class="modal-card" role="dialog" aria-modal="true" aria-label="${escapeHtml(d.aboutTitle)}">
       <div class="card-head" style="position:relative;">
         <h2 style="margin:0;font-size:22px;">${escapeHtml(d.aboutTitle)}</h2>
-        <button type="button" class="card-close" id="btn-close-about" aria-label="Close">×</button>
+        <button type="button" class="card-close" id="btn-close-about" aria-label="${escapeHtml(d.closeLabel)}">×</button>
       </div>
       <p style="margin:10px 0 8px;line-height:1.55;">${escapeHtml(d.aboutLead)}</p>
       <p class="card-sub" style="margin:0 0 8px;line-height:1.5;">${escapeHtml(tileMethodNote)}</p>
@@ -687,10 +764,10 @@ export function renderCreditAndAboutModal(
         .map(
           (c) => `
         <div class="credit-row">
-          <strong>${escapeHtml(c.dataset)}</strong> — ${escapeHtml(c.publisher)} (${escapeHtml(c.license)})<br />
+          <strong>${escapeHtml(sanitizeCreditField(c.dataset, state.lang))}</strong> — ${escapeHtml(sanitizeCreditField(c.publisher, state.lang))} (${escapeHtml(sanitizeCreditField(c.license, state.lang))})<br />
           <small style="color:var(--u-mute);">
-            Version: ${escapeHtml(c.version)} · Retrieved: ${escapeHtml(c.retrievedAt)}<br />
-            ${escapeHtml(c.modifications)}
+            ${escapeHtml(versionLabel)}: ${escapeHtml(c.version)} · ${escapeHtml(retrievedLabel)}: ${escapeHtml(c.retrievedAt)}<br />
+            ${escapeHtml(sanitizeCreditField(c.modifications, state.lang))}
           </small>
         </div>`,
         )

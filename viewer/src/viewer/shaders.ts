@@ -39,7 +39,8 @@ uniform float u_nearM;
 uniform float u_farM;
 uniform float u_dataScale;
 
-uniform vec4 u_sunTint; // rgb + alpha
+uniform vec4 u_glowTint;
+uniform float u_nightIntensity;
 uniform float u_showDepth;
 uniform float u_showTileGrid;
 uniform int u_workingTileSize;
@@ -73,17 +74,34 @@ void main() {
 
   vec4 colOut = vec4(0.0);
 
-  // Subtle Yokohama sun lighting tint + warm evening/night window glow on buildings & bridges
-  if (u_sunTint.a > 0.001) {
+  // Soft horizon glow during golden hour & dusk
+  if (u_glowTint.a > 0.005) {
     float waterBoost = surfaceKind == 1 ? 1.15 : 0.85;
-    colOut = vec4(u_sunTint.rgb, clamp(u_sunTint.a * waterBoost, 0.0, 0.65));
-    if (u_sunTint.a > 0.16 && u_sunTint.b > u_sunTint.r && (surfaceKind == 4 || surfaceKind == 5)) {
-      float wx = mod(floor(v_imgPx.x * 0.25), 5.0);
-      float wy = mod(floor(v_imgPx.y * 0.25), 4.0);
-      float seed = fract(sin(dot(floor(v_imgPx * 0.25), vec2(12.9898, 78.233))) * 43758.5453);
-      if (wx < 1.5 && wy < 1.2 && seed > 0.42) {
-        vec3 warmGlow = surfaceKind == 5 ? vec3(1.0, 0.88, 0.62) : vec3(1.0, 0.82, 0.46);
-        colOut = mix(colOut, vec4(warmGlow, 0.55), 0.72);
+    colOut = vec4(u_glowTint.rgb, clamp(u_glowTint.a * waterBoost, 0.0, 0.28));
+  }
+
+  // City lights after dark: warm architectural windows + streetlamp pools along decks & roads
+  if (u_nightIntensity > 0.02) {
+    if (surfaceKind == 4 || surfaceKind == 5) {
+      float wx = mod(floor(v_imgPx.x * 0.28), 5.0);
+      float wy = mod(floor(v_imgPx.y * 0.28), 4.0);
+      float seed = fract(sin(dot(floor(v_imgPx * 0.28), vec2(12.9898, 78.233))) * 43758.5453);
+      if (wx < 1.4 && wy < 1.2 && seed > 0.44) {
+        vec3 warmGlow = surfaceKind == 5 ? vec3(1.0, 0.88, 0.62) : vec3(1.0, 0.80, 0.44);
+        vec4 lightCol = vec4(warmGlow, 0.66 * u_nightIntensity);
+        colOut = mix(colOut, lightCol, 0.82);
+      }
+    } else if (surfaceKind == 3 || surfaceKind == 7) {
+      vec2 cell = floor(v_imgPx / 44.0);
+      vec2 cellCenter = (cell + 0.5) * 44.0;
+      float seed = fract(sin(dot(cell, vec2(41.23, 19.71))) * 23456.78);
+      if (seed > 0.35) {
+        float dist = length(v_imgPx - cellCenter);
+        float halo = max(0.0, 1.0 - dist / 16.0);
+        if (halo > 0.01) {
+          vec4 lamp = vec4(1.0, 0.78, 0.42, halo * halo * 0.42 * u_nightIntensity);
+          colOut = vec4(mix(colOut.rgb, lamp.rgb, lamp.a), max(colOut.a, lamp.a));
+        }
       }
     }
   }
@@ -125,6 +143,7 @@ layout(location = 2) in vec3 a_normalLocal;
 
 uniform vec3 u_vehicleOriginLocalM;
 uniform float u_headingRad; // clockwise from North (+Y)
+uniform vec3 u_meshScale;   // local (x, y, z) scale in meters
 uniform vec3 u_cameraOriginLocalM;
 uniform vec3 u_camRight;
 uniform vec3 u_camUp;
@@ -145,18 +164,21 @@ void main() {
   float s = sin(u_headingRad);
   float c = cos(u_headingRad);
 
+  vec3 scaledPos = a_posLocalM * u_meshScale;
+
   // Rotate vehicle local (right, forward, up) to EPSG:6677 local (east, north, up)
   vec3 worldOffset = vec3(
-    a_posLocalM.x * c + a_posLocalM.y * s,
-    -a_posLocalM.x * s + a_posLocalM.y * c,
-    a_posLocalM.z
+    scaledPos.x * c + scaledPos.y * s,
+    -scaledPos.x * s + scaledPos.y * c,
+    scaledPos.z
   );
   vec3 worldPos = u_vehicleOriginLocalM + worldOffset;
 
+  vec3 nScaled = a_normalLocal / max(u_meshScale, vec3(0.01));
   vec3 nWorld = vec3(
-    a_normalLocal.x * c + a_normalLocal.y * s,
-    -a_normalLocal.x * s + a_normalLocal.y * c,
-    a_normalLocal.z
+    nScaled.x * c + nScaled.y * s,
+    -nScaled.x * s + nScaled.y * c,
+    nScaled.z
   );
 
   vec3 d = worldPos - u_cameraOriginLocalM;
@@ -198,6 +220,7 @@ uniform float u_dataScale;
 uniform float u_depthBiasM;
 uniform float u_xrayMode;
 uniform float u_isSelected;
+uniform float u_alpha;
 
 in vec2 v_imgPx;
 in float v_depthM;
@@ -230,17 +253,17 @@ void main() {
     if (u_xrayMode > 0.5) {
       float checker = mod(floor(gl_FragCoord.x * 0.25) + floor(gl_FragCoord.y * 0.25), 2.0);
       if (checker < 0.5) discard;
-      outColor = vec4(0.28, 0.85, 1.0, 0.48);
+      outColor = vec4(0.28, 0.85, 1.0, 0.48 * u_alpha);
       return;
     }
     if (u_isSelected > 0.5) {
-      outColor = vec4(v_color, 0.28);
+      outColor = vec4(v_color, 0.28 * u_alpha);
       return;
     }
     discard;
   }
 
-  outColor = vec4(v_color, 1.0);
+  outColor = vec4(v_color, u_alpha);
 }
 `;
 
