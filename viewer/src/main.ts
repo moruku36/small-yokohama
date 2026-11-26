@@ -6,10 +6,21 @@ import {
 } from "@small-yokohama/core";
 import { Soundscape } from "./audio/Soundscape.js";
 import {
+  resolveAirCabinForFrame,
+  type ResolvedAirCabinGondola,
+} from "./data/airCabinFeed.js";
+import {
+  fetchLivePlanesApi,
+  resolvePlanesForFrame,
+  type LivePlaneApiPayload,
+  type ResolvedPlane,
+} from "./data/planeFeed.js";
+import {
   loadCurrentRelease,
   resolveFeatureById,
   type LoadedReleaseBundle,
 } from "./data/releaseLoader.js";
+import { isStationSelection } from "./data/stationDepartures.js";
 import { loadAmbientFixtures } from "./data/trafficFeed.js";
 import {
   fetchLiveTrainsApi,
@@ -20,9 +31,11 @@ import {
   type YokohamaRailBundle,
 } from "./data/trainFeed.js";
 import {
+  fetchLiveBusesApi,
   fetchSnapshotForPreset,
   resolveVehiclesForFrame,
   type AnimatedPortCall,
+  type LiveBusApiPayload,
   type ResolvedFeedState,
   type ResolvedVehicle,
 } from "./data/vehicleFeed.js";
@@ -136,14 +149,23 @@ async function bootstrap(): Promise<void> {
   );
 
   const sessionStartDate = new Date();
-  let [currentSnapshot, { railBundle, streetlights }, liveTrainsApi, ambient, liveWeather] =
-    await Promise.all([
-      fetchSnapshotForPreset(bundle.baseReleaseUrl, state.feedPreset, state.liveEndpoint),
-      loadRailBundle(bundle.baseReleaseUrl),
-      fetchLiveTrainsApi(),
-      loadAmbientFixtures(bundle.baseReleaseUrl),
-      fetchYokohamaWeather(),
-    ]);
+  let [
+    currentSnapshot,
+    { railBundle, streetlights },
+    liveTrainsApi,
+    liveBusesApi,
+    livePlanesApi,
+    ambient,
+    liveWeather,
+  ] = await Promise.all([
+    fetchSnapshotForPreset(bundle.baseReleaseUrl, state.feedPreset, state.liveEndpoint),
+    loadRailBundle(bundle.baseReleaseUrl),
+    fetchLiveTrainsApi(),
+    fetchLiveBusesApi(state.liveEndpoint),
+    fetchLivePlanesApi(),
+    loadAmbientFixtures(bundle.baseReleaseUrl),
+    fetchYokohamaWeather(),
+  ]);
 
   let currentWeatherPayload: LiveWeatherPayload | null = liveWeather;
   const resolveCurrentWeather = () => {
@@ -161,10 +183,20 @@ async function bootstrap(): Promise<void> {
     currentSnapshot,
     state.feedPreset,
     state.simTimeSec,
+    Date.now(),
+    liveBusesApi,
   );
   let resolvedTrains: ResolvedTrain[] = resolveTrainsForFrame(
     railBundle,
     liveTrainsApi,
+    state.simTimeSec,
+    sessionStartDate,
+  );
+  let resolvedPlanes: ResolvedPlane[] = resolvePlanesForFrame(
+    livePlanesApi,
+    state.simTimeSec,
+  );
+  let resolvedAirCabins: ResolvedAirCabinGondola[] = resolveAirCabinForFrame(
     state.simTimeSec,
     sessionStartDate,
   );
@@ -198,7 +230,7 @@ async function bootstrap(): Promise<void> {
       status: rv.freshness.status,
     };
     state.activeTab = null;
-    mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
     refreshUi();
   };
 
@@ -208,7 +240,29 @@ async function bootstrap(): Promise<void> {
     state.following = true;
     state.selected = { kind: "train", train: liveTr };
     state.activeTab = null;
-    mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
+    refreshUi();
+  };
+
+  const selectPlane = (p: ResolvedPlane) => {
+    stopTv(false);
+    const liveP = resolvedPlanes.find((x) => x.id === p.id) ?? p;
+    state.following = true;
+    state.selected = { kind: "plane", plane: liveP };
+    state.activeTab = null;
+    mapViewer.panToLonLat(liveP.lon, liveP.lat, liveP.displayElevM);
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
+    refreshUi();
+  };
+
+  const selectAirCabin = (cabin: ResolvedAirCabinGondola) => {
+    stopTv(false);
+    const liveC = resolvedAirCabins.find((x) => x.id === cabin.id) ?? cabin;
+    state.following = true;
+    state.selected = { kind: "aircabin", cabin: liveC };
+    state.activeTab = null;
+    mapViewer.panToLonLat(liveC.lon, liveC.lat, liveC.cableElevM - 2.2);
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
     refreshUi();
   };
 
@@ -225,6 +279,10 @@ async function bootstrap(): Promise<void> {
       selectVehicle,
       handlers.onSelectPortCall,
       selectTrain,
+      resolvedPlanes,
+      resolvedAirCabins,
+      selectPlane,
+      selectAirCabin,
     );
   };
 
@@ -239,6 +297,8 @@ async function bootstrap(): Promise<void> {
       handlers.onSelectPoi,
       resolvedFeed,
       resolvedTrains,
+      resolvedPlanes,
+      resolvedAirCabins,
     );
     transitLayer.render(
       transitLayerEl,
@@ -250,6 +310,10 @@ async function bootstrap(): Promise<void> {
       selectVehicle,
       handlers.onSelectPortCall,
       selectTrain,
+      resolvedPlanes,
+      resolvedAirCabins,
+      selectPlane,
+      selectAirCabin,
     );
     minimap?.render(state, bounds);
   };
@@ -268,11 +332,21 @@ async function bootstrap(): Promise<void> {
   const refreshUi = () => {
     syncDocumentPrefs();
     renderBar(barEl, state, handlers);
-    renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains);
+    renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains, resolvedPlanes, resolvedAirCabins);
     const drift = mapViewer ? mapViewer.measureMaxMarkerDriftCssPx() : 0;
-    renderCard(cardEl, state, resolvedFeed, drift, handlers, resolvedTrains);
+    renderCard(
+      cardEl,
+      state,
+      resolvedFeed,
+      drift,
+      handlers,
+      resolvedTrains,
+      resolvedPlanes,
+      resolvedAirCabins,
+      railBundle,
+    );
     const wState = resolveCurrentWeather();
-    renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText);
+    renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
     mapViewer?.setWeatherVisual(wState.rainIntensity, wState.windSlope);
     renderSq(sqEl, state, handlers);
     renderCreditAndAboutModal(creditEl, aboutModalEl, state, bundle, handlers);
@@ -300,8 +374,14 @@ async function bootstrap(): Promise<void> {
       preset,
       state.liveEndpoint,
     );
-    resolvedFeed = resolveVehiclesForFrame(currentSnapshot, preset, state.simTimeSec);
-    mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+    resolvedFeed = resolveVehiclesForFrame(
+      currentSnapshot,
+      preset,
+      state.simTimeSec,
+      Date.now(),
+      liveBusesApi,
+    );
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
     refreshUi();
   };
 
@@ -359,6 +439,14 @@ async function bootstrap(): Promise<void> {
       const pc = resolvedFeed.portCalls.find((x) => x.id === sel.portCall.id);
       return pc ? { lon: pc.lon, lat: pc.lat, elevM: 3.5 } : null;
     }
+    if (sel.kind === "plane") {
+      const p = resolvedPlanes.find((x) => x.id === sel.plane.id);
+      return p ? { lon: p.lon, lat: p.lat, elevM: p.displayElevM } : null;
+    }
+    if (sel.kind === "aircabin") {
+      const c = resolvedAirCabins.find((x) => x.id === sel.cabin.id);
+      return c ? { lon: c.lon, lat: c.lat, elevM: c.cableElevM - 2.2 } : null;
+    }
     return null;
   };
 
@@ -366,7 +454,17 @@ async function bootstrap(): Promise<void> {
     if (!state.following) return;
     state.following = false;
     if (state.selected) {
-      renderCard(cardEl, state, resolvedFeed, 0, handlers, resolvedTrains);
+      renderCard(
+        cardEl,
+        state,
+        resolvedFeed,
+        0,
+        handlers,
+        resolvedTrains,
+        resolvedPlanes,
+        resolvedAirCabins,
+        railBundle,
+      );
     }
   };
 
@@ -397,7 +495,7 @@ async function bootstrap(): Promise<void> {
     },
     onSearchQuery: (q: string) => {
       state.searchQuery = q;
-      renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains);
+      renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains, resolvedPlanes, resolvedAirCabins);
     },
     onToggleTv: () => {
       if (state.tvMode) {
@@ -536,7 +634,17 @@ async function bootstrap(): Promise<void> {
     },
     onToggleFollow: () => {
       state.following = !state.following;
-      renderCard(cardEl, state, resolvedFeed, 0, handlers, resolvedTrains);
+      renderCard(
+        cardEl,
+        state,
+        resolvedFeed,
+        0,
+        handlers,
+        resolvedTrains,
+        resolvedPlanes,
+        resolvedAirCabins,
+        railBundle,
+      );
     },
     onSelectLandmarkId: (id: string) => {
       stopTv(false);
@@ -577,6 +685,8 @@ async function bootstrap(): Promise<void> {
       refreshUi();
     },
     onSelectTrain: selectTrain,
+    onSelectPlane: selectPlane,
+    onSelectAirCabin: selectAirCabin,
     onClearSelection: () => {
       stopTv(false);
       state.following = false;
@@ -589,6 +699,8 @@ async function bootstrap(): Promise<void> {
   mapViewer = new MapViewer(osdEl, glCanvas, bundle, state, {
     onSelectVehicle: selectVehicle,
     onSelectTrain: selectTrain,
+    onSelectPlane: selectPlane,
+    onSelectAirCabin: selectAirCabin,
     onSelectLandmark: (lm) => {
       stopTv(false);
       state.following = false;
@@ -661,7 +773,14 @@ async function bootstrap(): Promise<void> {
     });
   }
 
-  mapViewer.updateState(state, resolvedFeed, resolvedTrains, true);
+  mapViewer.updateState(
+    state,
+    resolvedFeed,
+    resolvedTrains,
+    true,
+    resolvedPlanes,
+    resolvedAirCabins,
+  );
   refreshUi();
 
   if (cloudIntro) {
@@ -728,13 +847,37 @@ async function bootstrap(): Promise<void> {
       void fetchSnapshotForPreset(bundle.baseReleaseUrl, "live", state.liveEndpoint).then(
         (snap) => {
           currentSnapshot = snap;
-          resolvedFeed = resolveVehiclesForFrame(currentSnapshot, "live", state.simTimeSec);
-          mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+          resolvedFeed = resolveVehiclesForFrame(
+            currentSnapshot,
+            "live",
+            state.simTimeSec,
+            Date.now(),
+            liveBusesApi,
+          );
+          mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
           refreshUi();
         },
       );
     }
   }, 30_000);
+
+  window.setInterval(() => {
+    if (document.hidden) return;
+    void fetchLiveBusesApi(state.liveEndpoint).then((payload: LiveBusApiPayload | null) => {
+      if (payload) {
+        liveBusesApi = payload;
+        resolvedFeed = resolveVehiclesForFrame(
+          currentSnapshot,
+          state.feedPreset,
+          state.simTimeSec,
+          Date.now(),
+          liveBusesApi,
+        );
+        mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
+        syncTransitBadges();
+      }
+    });
+  }, 25_000);
 
   window.setInterval(() => {
     if (document.hidden) return;
@@ -747,11 +890,31 @@ async function bootstrap(): Promise<void> {
           state.simTimeSec,
           sessionStartDate,
         );
-        mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+        mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
         syncTransitBadges();
       }
     });
   }, 20_000);
+
+  window.setInterval(() => {
+    if (document.hidden) return;
+    void fetchLivePlanesApi().then((payload: LivePlaneApiPayload | null) => {
+      if (payload) {
+        livePlanesApi = payload;
+        resolvedPlanes = resolvePlanesForFrame(livePlanesApi, state.simTimeSec);
+        mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
+        syncTransitBadges();
+        renderStatus(
+          statusEl,
+          state,
+          resolvedFeed,
+          resolvedTrains,
+          resolveCurrentWeather().statusText,
+          resolvedPlanes,
+        );
+      }
+    });
+  }, 15_000);
 
   window.setInterval(() => {
     if (document.hidden) return;
@@ -760,14 +923,21 @@ async function bootstrap(): Promise<void> {
         currentWeatherPayload = w;
         const wState = resolveCurrentWeather();
         mapViewer.setWeatherVisual(wState.rainIntensity, wState.windSlope);
-        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText);
+        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
       }
     });
   }, 600_000);
 
   window.setInterval(() => {
     if (document.hidden) return;
-    renderStatus(statusEl, state, resolvedFeed, resolvedTrains, resolveCurrentWeather().statusText);
+    renderStatus(
+      statusEl,
+      state,
+      resolvedFeed,
+      resolvedTrains,
+      resolveCurrentWeather().statusText,
+      resolvedPlanes,
+    );
     if (state.sunHourJst === null) {
       const liveIsNight = isNightAltitude(
         computeYokohamaSun(getSunDateForHourJst(null)).altitudeDeg,
@@ -778,7 +948,7 @@ async function bootstrap(): Promise<void> {
         syncDocumentPrefs();
         renderSq(sqEl, state, handlers);
       }
-      mapViewer.updateState(state, resolvedFeed, resolvedTrains, true);
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains, true, resolvedPlanes, resolvedAirCabins);
       minimap?.render(state, mapViewer.getViewportInfo());
     }
   }, 15_000);
@@ -789,6 +959,7 @@ async function bootstrap(): Promise<void> {
 
   let lastTs = performance.now();
   let lastUiRefreshTs = lastTs;
+  let lastStationBoardRefreshTs = lastTs;
   let rafId = 0;
 
   const tick = (now: number) => {
@@ -816,6 +987,8 @@ async function bootstrap(): Promise<void> {
           currentSnapshot,
           state.feedPreset,
           state.simTimeSec,
+          Date.now(),
+          liveBusesApi,
         );
         resolvedTrains = resolveTrainsForFrame(
           railBundle,
@@ -823,24 +996,53 @@ async function bootstrap(): Promise<void> {
           state.simTimeSec,
           sessionStartDate,
         );
+        resolvedPlanes = resolvePlanesForFrame(livePlanesApi, state.simTimeSec);
+        resolvedAirCabins = resolveAirCabinForFrame(state.simTimeSec, sessionStartDate);
       }
-      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
+      mapViewer.updateState(
+        state,
+        resolvedFeed,
+        resolvedTrains,
+        false,
+        resolvedPlanes,
+        resolvedAirCabins,
+      );
       if (state.playing) {
         syncTransitBadges();
       }
 
       if (now - lastUiRefreshTs > 250) {
         lastUiRefreshTs = now;
+        const movingSel =
+          state.selected?.kind === "vehicle" ||
+          state.selected?.kind === "portcall" ||
+          state.selected?.kind === "train" ||
+          state.selected?.kind === "plane" ||
+          state.selected?.kind === "aircabin";
+        const stationRefreshDue =
+          now - lastStationBoardRefreshTs >= 1000 && isStationSelection(state.selected);
+        if (state.playing && (movingSel || stationRefreshDue)) {
+          if (stationRefreshDue) lastStationBoardRefreshTs = now;
+          const drift = mapViewer.measureMaxMarkerDriftCssPx();
+          renderCard(
+            cardEl,
+            state,
+            resolvedFeed,
+            drift,
+            handlers,
+            resolvedTrains,
+            resolvedPlanes,
+            resolvedAirCabins,
+            railBundle,
+          );
+        }
         if (
           state.playing &&
-          (state.selected?.kind === "vehicle" ||
-            state.selected?.kind === "portcall" ||
-            state.selected?.kind === "train")
+          (state.selected?.kind === "portcall" ||
+            state.selected?.kind === "train" ||
+            state.selected?.kind === "plane" ||
+            state.selected?.kind === "aircabin")
         ) {
-          const drift = mapViewer.measureMaxMarkerDriftCssPx();
-          renderCard(cardEl, state, resolvedFeed, drift, handlers, resolvedTrains);
-        }
-        if (state.playing && (state.selected?.kind === "portcall" || state.selected?.kind === "train")) {
           const bounds = mapViewer.getViewportInfo();
           labelLayer.render(
             labelLayerEl,
@@ -850,9 +1052,11 @@ async function bootstrap(): Promise<void> {
             handlers.onSelectPoi,
             resolvedFeed,
             resolvedTrains,
+            resolvedPlanes,
+            resolvedAirCabins,
           );
         }
-        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText);
+        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
       }
     }
 

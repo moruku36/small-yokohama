@@ -183,9 +183,9 @@ void main() {
 
   vec2 uv = (vec2(px, py) - u_viewTopLeftPx) / (u_viewBottomRightPx - u_viewTopLeftPx);
   vec2 ndc = vec2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-  float ndcZ = ((depthM - u_nearM) / (u_farM - u_nearM)) * 2.0 - 1.0;
+  float ndcZ = clamp(((depthM - u_nearM) / (u_farM - u_nearM)) * 2.0 - 1.0, -0.995, 0.995);
   if (u_isOutline > 0.5) {
-    ndcZ += 0.00045;
+    ndcZ = min(0.995, ndcZ + 0.00045);
   }
 
   gl_Position = vec4(ndc, ndcZ, 1.0);

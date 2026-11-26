@@ -1,4 +1,6 @@
 import { wgs84ToImage, type PoiRecord } from "@small-yokohama/core";
+import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
+import type { ResolvedPlane } from "../data/planeFeed.js";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
 import type { ResolvedTrain } from "../data/trainFeed.js";
 import type { ResolvedFeedState } from "../data/vehicleFeed.js";
@@ -120,6 +122,8 @@ export class LabelLayer {
     state: ViewerState,
     feed: ResolvedFeedState | null,
     trains: readonly ResolvedTrain[] = [],
+    planes: readonly ResolvedPlane[] = [],
+    airCabins: readonly ResolvedAirCabinGondola[] = [],
   ): { px: number; py: number; label: string; id: string } | null {
     const sel = state.selected;
     if (!sel) return null;
@@ -164,6 +168,26 @@ export class LabelLayer {
         id: `tr:${tr.id}`,
       };
     }
+    if (sel.kind === "plane") {
+      const p = planes.find((x) => x.id === sel.plane.id) ?? sel.plane;
+      const img = wgs84ToImage(bundle.camera, p.lon, p.lat, p.displayElevM + 10);
+      return {
+        px: img.px,
+        py: img.py,
+        label: `${p.callsign} · ${p.altitudeM}m`,
+        id: `pl:${p.id}`,
+      };
+    }
+    if (sel.kind === "aircabin") {
+      const c = airCabins.find((x) => x.id === sel.cabin.id) ?? sel.cabin;
+      const img = wgs84ToImage(bundle.camera, c.lon, c.lat, c.cableElevM + 2);
+      return {
+        px: img.px,
+        py: img.py,
+        label: `AIR CABIN #${c.cabinNumber}`,
+        id: `ac:${c.id}`,
+      };
+    }
     if (sel.kind === "feature") {
       const f = sel.feature;
       const label =
@@ -195,6 +219,8 @@ export class LabelLayer {
     onSelectPoi: (poi: PoiRecord) => void,
     feed: ResolvedFeedState | null = null,
     trains: readonly ResolvedTrain[] = [],
+    planes: readonly ResolvedPlane[] = [],
+    airCabins: readonly ResolvedAirCabinGondola[] = [],
   ): void {
     if (!bounds) {
       if (container.childElementCount > 0) {
@@ -210,7 +236,7 @@ export class LabelLayer {
       return;
     }
 
-    const selAnchor = this.resolveSelectedAnchor(bundle, state, feed, trains);
+    const selAnchor = this.resolveSelectedAnchor(bundle, state, feed, trains, planes, airCabins);
     const renderKey = [
       state.lang,
       state.showLabels ? "1" : "0",

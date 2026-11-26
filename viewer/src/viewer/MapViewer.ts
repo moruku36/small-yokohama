@@ -11,6 +11,8 @@ import {
   type Landmark,
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
+import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
+import type { ResolvedPlane } from "../data/planeFeed.js";
 import {
   pickFeatureIdAtImagePx,
   resolveFeatureById,
@@ -49,6 +51,8 @@ import {
 export type MapPick =
   | { kind: "vehicle"; vehicle: ResolvedVehicle }
   | { kind: "train"; train: ResolvedTrain }
+  | { kind: "plane"; plane: ResolvedPlane }
+  | { kind: "aircabin"; cabin: ResolvedAirCabinGondola }
   | { kind: "portcall"; portCall: AnimatedPortCall }
   | { kind: "landmark"; landmark: Landmark }
   | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number };
@@ -56,6 +60,8 @@ export type MapPick =
 export interface MapViewerCallbacks {
   onSelectVehicle: (rv: ResolvedVehicle) => void;
   onSelectTrain: (tr: ResolvedTrain) => void;
+  onSelectPlane?: (plane: ResolvedPlane) => void;
+  onSelectAirCabin?: (cabin: ResolvedAirCabinGondola) => void;
   onSelectLandmark: (lm: Landmark) => void;
   onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => void;
   onSelectPortCall: (pc: AnimatedPortCall) => void;
@@ -70,7 +76,7 @@ export interface MapViewerCallbacks {
 }
 
 const UI_CHROME_SELECTOR = "#bar, #drop, #card, #sq, #status, #minimap, #about-modal, #credit";
-const PIN_SELECTOR = ".map-label, .search-pin, .bus-pill, .boat-pill, .train-pill";
+const PIN_SELECTOR = ".map-label, .search-pin, .bus-pill, .boat-pill, .train-pill, .plane-pill, .cabin-pill";
 
 export class MapViewer {
   private readonly osd: OpenSeadragon.Viewer;
@@ -83,6 +89,8 @@ export class MapViewer {
   private currentVariant: MapVariant;
   private feedState: ResolvedFeedState | null = null;
   private trainsState: readonly ResolvedTrain[] = [];
+  private planesState: readonly ResolvedPlane[] = [];
+  private airCabinsState: readonly ResolvedAirCabinGondola[] = [];
   private trafficBundle: AmbientTrafficBundle | null = null;
   private weatherVisual: { rainIntensity: number; windSlope: number } = {
     rainIntensity: 0,
@@ -949,12 +957,16 @@ export class MapViewer {
     feedState: ResolvedFeedState | null,
     trainsState: readonly ResolvedTrain[] = this.trainsState,
     forceSkyRefresh = false,
+    planesState: readonly ResolvedPlane[] = this.planesState,
+    airCabinsState: readonly ResolvedAirCabinGondola[] = this.airCabinsState,
   ): void {
     const prevSun = this.state.sunHourJst;
     const prevTheme = this.state.theme;
     this.state = nextState;
     this.feedState = feedState;
     this.trainsState = trainsState;
+    this.planesState = planesState;
+    this.airCabinsState = airCabinsState;
 
     if (nextState.variant !== this.currentVariant) {
       this.currentVariant = nextState.variant;
@@ -1134,6 +1146,10 @@ export class MapViewer {
       this.state.selected?.kind === "vehicle" ? this.state.selected.vehicle.entityId : null;
     const selectedTrainId =
       this.state.selected?.kind === "train" ? this.state.selected.train.id : null;
+    const selectedPlaneId =
+      this.state.selected?.kind === "plane" ? this.state.selected.plane.id : null;
+    const selectedAirCabinId =
+      this.state.selected?.kind === "aircabin" ? this.state.selected.cabin.id : null;
     const selectedPortCallId =
       this.state.selected?.kind === "portcall" ? this.state.selected.portCall.id : null;
 
@@ -1194,10 +1210,15 @@ export class MapViewer {
       reducedMotion: this.state.reducedMotion,
       selectedVehicleId,
       selectedTrainId,
+      selectedPlaneId,
+      selectedAirCabinId,
       selectedPortCallId,
       gcps: this.bundle.gcps,
       deckTestPoint: this.bundle.deckTestPoint,
       portCalls: this.state.showBoats ? (this.feedState?.portCalls ?? []) : [],
+      planes: this.state.showPlanes ? this.planesState : [],
+      airCabins: this.state.showAirCabin ? this.airCabinsState : [],
+      showAirCabin: this.state.showAirCabin,
     });
   }
 
@@ -1214,6 +1235,12 @@ export class MapViewer {
       case "train":
         this.callbacks.onSelectTrain(pick.train);
         return;
+      case "plane":
+        this.callbacks.onSelectPlane?.(pick.plane);
+        return;
+      case "aircabin":
+        this.callbacks.onSelectAirCabin?.(pick.cabin);
+        return;
       case "portcall":
         this.callbacks.onSelectPortCall(pick.portCall);
         return;
@@ -1226,10 +1253,42 @@ export class MapViewer {
     }
   }
 
-  /** What is drawn at a point of the viewer element: moving things first, then the building under it. */
+  /** What is drawn at a point of the viewer element: sky & moving things first, then the building under it. */
   pickAt(viewerPos: OpenSeadragon.Point): MapPick | null {
     if (!this.osd.viewport) return null;
     const imgPt = this.osd.viewport.viewerElementToImageCoordinates(viewerPos);
+
+    // 0a. Check airborne aircraft first (highest layer)
+    if (this.state.showPlanes && this.planesState.length > 0) {
+      for (const p of this.planesState) {
+        const pImg = localToImage(
+          this.camera,
+          wgs84ToLocal(this.camera, p.lon, p.lat, p.displayElevM + 2.5),
+        );
+        const pScreen = this.osd.viewport.imageToViewerElementCoordinates(
+          new OpenSeadragon.Point(pImg.px, pImg.py),
+        );
+        if (Math.hypot(viewerPos.x - pScreen.x, viewerPos.y - pScreen.y) <= 32) {
+          return { kind: "plane", plane: p };
+        }
+      }
+    }
+
+    // 0b. Check YOKOHAMA AIR CABIN gondolas
+    if (this.state.showAirCabin && this.airCabinsState.length > 0) {
+      for (const cabin of this.airCabinsState) {
+        const gImg = localToImage(
+          this.camera,
+          wgs84ToLocal(this.camera, cabin.lon, cabin.lat, cabin.cableElevM - 2.6),
+        );
+        const gScreen = this.osd.viewport.imageToViewerElementCoordinates(
+          new OpenSeadragon.Point(gImg.px, gImg.py),
+        );
+        if (Math.hypot(viewerPos.x - gScreen.x, viewerPos.y - gScreen.y) <= 24) {
+          return { kind: "aircabin", cabin };
+        }
+      }
+    }
 
     // 1. Check vehicles first
     if (this.feedState && this.state.showBuses) {

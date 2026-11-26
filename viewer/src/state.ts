@@ -6,6 +6,8 @@ import {
   type SceneFeatureRecord,
   type VehicleRecord,
 } from "@small-yokohama/core";
+import type { ResolvedAirCabinGondola } from "./data/airCabinFeed.js";
+import type { ResolvedPlane } from "./data/planeFeed.js";
 import type { ResolvedTrain } from "./data/trainFeed.js";
 import type { AnimatedPortCall } from "./data/vehicleFeed.js";
 import type { WeatherMode } from "./data/weatherFeed.js";
@@ -41,6 +43,8 @@ export type FeedPreset =
 export type SelectedEntity =
   | { kind: "vehicle"; vehicle: VehicleRecord; ageSec: number | null; status: string }
   | { kind: "train"; train: ResolvedTrain }
+  | { kind: "plane"; plane: ResolvedPlane }
+  | { kind: "aircabin"; cabin: ResolvedAirCabinGondola }
   | { kind: "landmark"; landmark: Landmark }
   | { kind: "poi"; poi: PoiRecord }
   | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number }
@@ -60,6 +64,8 @@ export interface ViewerState {
   showTrains: boolean;
   showBuses: boolean;
   showBoats: boolean;
+  showPlanes: boolean;
+  showAirCabin: boolean;
   showTraffic: boolean;
   showPedestrians: boolean;
   showLabels: boolean;
@@ -75,7 +81,7 @@ export interface ViewerState {
   aboutOpen: boolean;
   /** Ambient harbour sound (off until the visitor turns it on: browsers block autoplay). */
   soundOn: boolean;
-  /** Keep the camera on the selected bus, train or ship as it moves. */
+  /** Keep the camera on the selected bus, train, ship, cabin or plane as it moves. */
   following: boolean;
   /** Play the drop-through-the-clouds opening (?intro=0 skips it). */
   introEnabled: boolean;
@@ -184,7 +190,7 @@ export function createInitialViewerState(
     theme,
     variant,
     feedPreset,
-    liveEndpoint: params.get("liveUrl") ?? "/api/snapshot.json",
+    liveEndpoint: params.get("liveUrl") ?? "/api/buses",
     playing: !prefersReducedMotion,
     simTimeSec: 0,
     sunHourJst,
@@ -192,6 +198,8 @@ export function createInitialViewerState(
     showTrains: params.get("trains") !== "0",
     showBuses: params.get("buses") !== "0",
     showBoats: params.get("boats") !== "0",
+    showPlanes: params.get("planes") !== "0",
+    showAirCabin: params.get("cabin") !== "0",
     showTraffic: params.get("cars") !== "0",
     showPedestrians: params.get("people") !== "0",
     showLabels: params.get("labels") !== "0",
@@ -250,6 +258,8 @@ export function serializeShareUrl(
   if (!state.showTrains) p.set("trains", "0");
   if (!state.showBuses) p.set("buses", "0");
   if (!state.showBoats) p.set("boats", "0");
+  if (!state.showPlanes) p.set("planes", "0");
+  if (!state.showAirCabin) p.set("cabin", "0");
   if (!state.showTraffic) p.set("cars", "0");
   if (!state.showPedestrians) p.set("people", "0");
   if (!state.showLabels) p.set("labels", "0");

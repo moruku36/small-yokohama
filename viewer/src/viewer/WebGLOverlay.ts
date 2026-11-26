@@ -5,6 +5,14 @@ import {
   type GroundControlPoint,
   type VehicleRecord,
 } from "@small-yokohama/core";
+import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
+import {
+  AIR_CABIN_LATERAL_HALF_M,
+  AIR_CABIN_PYLONS,
+  AIR_CABIN_TERMINALS,
+  sampleAirCabinCable,
+} from "../data/airCabinFeed.js";
+import type { PlaneMeshKind, ResolvedPlane } from "../data/planeFeed.js";
 import type { LoadedTilePixels } from "../data/releaseLoader.js";
 import type { AmbientCarInstance } from "../data/trafficFeed.js";
 import type { RailLineId, ResolvedTrain } from "../data/trainFeed.js";
@@ -460,6 +468,299 @@ function buildPodCarMesh(): MeshData {
   return finalizeMesh(verts);
 }
 
+function pushSegmentBeam(
+  verts: number[],
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  px: number,
+  py: number,
+  hw: number,
+  hh: number,
+  rgb: readonly [number, number, number],
+): void {
+  const aTL: readonly [number, number, number] = [a[0] - px * hw, a[1] - py * hw, a[2] + hh];
+  const aTR: readonly [number, number, number] = [a[0] + px * hw, a[1] + py * hw, a[2] + hh];
+  const aBL: readonly [number, number, number] = [a[0] - px * hw, a[1] - py * hw, a[2] - hh];
+  const aBR: readonly [number, number, number] = [a[0] + px * hw, a[1] + py * hw, a[2] - hh];
+  const bTL: readonly [number, number, number] = [b[0] - px * hw, b[1] - py * hw, b[2] + hh];
+  const bTR: readonly [number, number, number] = [b[0] + px * hw, b[1] + py * hw, b[2] + hh];
+  const bBL: readonly [number, number, number] = [b[0] - px * hw, b[1] - py * hw, b[2] - hh];
+  const bBR: readonly [number, number, number] = [b[0] + px * hw, b[1] + py * hw, b[2] - hh];
+  pushQuad(verts, aTL, aTR, bTR, bTL, [0, 0, 1], rgb);
+  pushQuad(verts, aBR, aBL, bBL, bBR, [0, 0, -1], rgb);
+  pushQuad(verts, aBL, aTL, bTL, bBL, [-px, -py, 0], rgb);
+  pushQuad(verts, aTR, aBR, bBR, bTR, [px, py, 0], rgb);
+}
+
+function pushSweptWingPair(
+  verts: number[],
+  yRootFront: number,
+  yRootBack: number,
+  xRoot: number,
+  yTipFront: number,
+  yTipBack: number,
+  xTip: number,
+  zBot: number,
+  zTop: number,
+  topRgb: readonly [number, number, number],
+  sideRgb: readonly [number, number, number],
+): void {
+  for (const sign of [1, -1] as const) {
+    const xr = xRoot * sign;
+    const xt = xTip * sign;
+    const rfTop: readonly [number, number, number] = [xr, yRootFront, zTop];
+    const rbTop: readonly [number, number, number] = [xr, yRootBack, zTop];
+    const tbTop: readonly [number, number, number] = [xt, yTipBack, zTop];
+    const tfTop: readonly [number, number, number] = [xt, yTipFront, zTop];
+
+    const rfBot: readonly [number, number, number] = [xr, yRootFront, zBot];
+    const rbBot: readonly [number, number, number] = [xr, yRootBack, zBot];
+    const tbBot: readonly [number, number, number] = [xt, yTipBack, zBot];
+    const tfBot: readonly [number, number, number] = [xt, yTipFront, zBot];
+
+    pushQuad(verts, rfTop, rbTop, tbTop, tfTop, [0, 0, 1], topRgb);
+    pushQuad(verts, tfBot, tbBot, rbBot, rfBot, [0, 0, -1], sideRgb);
+    pushQuad(verts, rfBot, tfBot, tfTop, rfTop, [0, 1, 0], sideRgb);
+    pushQuad(verts, rbTop, tbTop, tbBot, rbBot, [0, -1, 0], sideRgb);
+    pushQuad(verts, tfBot, tbBot, tbTop, tfTop, [sign, 0, 0], sideRgb);
+  }
+}
+
+function buildAirCabinStructureMesh(camera: CameraManifest): {
+  mesh: MeshData;
+  originLocalM: readonly [number, number, number];
+} {
+  const s0 = AIR_CABIN_TERMINALS.sakuragicho;
+  const s1 = AIR_CABIN_TERMINALS.ungapark;
+  const originLocalM = wgs84ToLocal(camera, (s0.lon + s1.lon) * 0.5, (s0.lat + s1.lat) * 0.5, 0);
+  const p0 = wgs84ToLocal(camera, s0.lon, s0.lat, 0);
+  const p1 = wgs84ToLocal(camera, s1.lon, s1.lat, 0);
+  const dx = p1[0] - p0[0];
+  const dy = p1[1] - p0[1];
+  const len = Math.max(1, Math.hypot(dx, dy));
+  const ax = dx / len;
+  const ay = dy / len;
+  const px = ay;
+  const py = -ax;
+
+  const toRel = (lon: number, lat: number, elevM: number): readonly [number, number, number] => {
+    const loc = wgs84ToLocal(camera, lon, lat, elevM);
+    return [loc[0] - originLocalM[0], loc[1] - originLocalM[1], loc[2] - originLocalM[2]];
+  };
+
+  const verts: number[] = [];
+  const towerWhite = [0.91, 0.93, 0.96] as const;
+  const plinthGray = [0.46, 0.49, 0.54] as const;
+  const crossSilver = [0.76, 0.80, 0.85] as const;
+  const sheaveDark = [0.18, 0.21, 0.26] as const;
+  const cableSteel = [0.15, 0.18, 0.23] as const;
+
+  for (const pylon of AIR_CABIN_PYLONS) {
+    const c = toRel(pylon.lon, pylon.lat, 0);
+    // Pedestal + vertical steel support mast
+    pushBoxMesh(verts, c[0], c[1], 1.5, 4.0, 2.0, 2.0, plinthGray, plinthGray);
+    pushBoxMesh(verts, c[0], c[1], 4.0, pylon.saddleElevM - 0.55, 1.15, 1.15, towerWhite, towerWhite);
+
+    // Overhead crossarm perpendicular to the ropeway axis
+    const armHalfSpan = 3.9;
+    const armA: readonly [number, number, number] = [
+      c[0] - px * armHalfSpan,
+      c[1] - py * armHalfSpan,
+      pylon.saddleElevM - 0.25,
+    ];
+    const armB: readonly [number, number, number] = [
+      c[0] + px * armHalfSpan,
+      c[1] + py * armHalfSpan,
+      pylon.saddleElevM - 0.25,
+    ];
+    pushSegmentBeam(verts, armA, armB, ax, ay, 0.52, 0.42, crossSilver);
+
+    // Dual pulley roller assemblies under each haul cable
+    for (const side of [AIR_CABIN_LATERAL_HALF_M, -AIR_CABIN_LATERAL_HALF_M]) {
+      const sx = c[0] + px * side;
+      const sy = c[1] + py * side;
+      pushBoxMesh(
+        verts,
+        sx,
+        sy,
+        pylon.saddleElevM - 0.15,
+        pylon.saddleElevM + 0.55,
+        0.75,
+        2.1,
+        sheaveDark,
+        sheaveDark,
+      );
+    }
+  }
+
+  // Dual continuous haul cables running 630 m from Sakuragicho to Unga Park
+  const segCount = 28;
+  for (const lateralM of [AIR_CABIN_LATERAL_HALF_M, -AIR_CABIN_LATERAL_HALF_M]) {
+    const pts: Array<readonly [number, number, number]> = [];
+    for (let i = 0; i <= segCount; i++) {
+      const sample = sampleAirCabinCable(i / segCount, lateralM);
+      pts.push(toRel(sample.lon, sample.lat, sample.cableElevM));
+    }
+    for (let i = 0; i < segCount; i++) {
+      pushSegmentBeam(verts, pts[i]!, pts[i + 1]!, px, py, 0.24, 0.24, cableSteel);
+    }
+  }
+
+  return { mesh: finalizeMesh(verts), originLocalM };
+}
+
+function buildAirCabinGondolaMesh(nightLit: boolean): MeshData {
+  const verts: number[] = [];
+  const gripDark = [0.22, 0.24, 0.29] as const;
+  const steelArm = [0.76, 0.80, 0.86] as const;
+  const roofSilver = [0.95, 0.96, 0.98] as const;
+  const trimCoral = [0.92, 0.36, 0.28] as const;
+  const shellWhite = [0.94, 0.95, 0.97] as const;
+  const glassRgb = nightLit
+    ? ([1.0, 0.85, 0.46] as const)
+    : ([0.20, 0.44, 0.62] as const);
+
+  // Cable grip clamp & vertical hanger stem (anchored to z=0 cable point)
+  pushBoxMesh(verts, 0, 0, -0.15, 0.28, 0.65, 0.85, gripDark, gripDark);
+  pushBoxMesh(verts, 0, 0, -1.35, -0.15, 0.30, 0.30, steelArm, steelArm);
+  // Curved silver roof dome & air vents
+  pushBoxMesh(verts, 0, 0, -1.68, -1.25, 2.7, 3.3, roofSilver, roofSilver);
+  // Panoramic illuminated/sky glass cabin enclosure
+  pushBoxMesh(verts, 0, 0, -3.30, -1.68, 2.95, 3.55, glassRgb, roofSilver);
+  // Lower white/coral cabin shell
+  pushBoxMesh(verts, 0, 0, -3.65, -3.30, 2.88, 3.48, trimCoral, shellWhite);
+  pushBoxMesh(verts, 0, 0, -4.15, -3.65, 2.75, 3.35, shellWhite, shellWhite);
+
+  return finalizeMesh(verts);
+}
+
+function buildPlaneMesh(kind: PlaneMeshKind): MeshData {
+  const verts: number[] = [];
+  const whiteFuse = [0.97, 0.98, 0.99] as const;
+  const wingSilver = [0.88, 0.90, 0.94] as const;
+  const wingUnder = [0.64, 0.68, 0.75] as const;
+  const cockpitGlass = [0.10, 0.16, 0.25] as const;
+  const engineNacelle = [0.80, 0.83, 0.88] as const;
+  const portRed = [0.95, 0.20, 0.18] as const;
+  const starGreen = [0.16, 0.86, 0.38] as const;
+
+  if (kind === "heli") {
+    const rescueWhite = [0.97, 0.97, 0.98] as const;
+    const coralStripe = [0.90, 0.32, 0.24] as const;
+    const skidDark = [0.18, 0.20, 0.24] as const;
+    const rotorDark = [0.22, 0.24, 0.28] as const;
+
+    pushBoxMesh(verts, 0, 0.6, 0.7, 2.8, 2.4, 5.8, rescueWhite, rescueWhite);
+    pushBoxMesh(verts, 0, 0.7, 1.35, 1.85, 2.48, 5.2, coralStripe, coralStripe);
+    pushBoxMesh(verts, 0, 2.8, 1.1, 2.55, 2.1, 1.8, cockpitGlass, rescueWhite);
+    pushBoxMesh(verts, 0, -4.5, 1.65, 2.35, 0.65, 5.6, rescueWhite, rescueWhite);
+    pushBoxMesh(verts, 0, -7.1, 1.7, 3.7, 0.32, 1.5, coralStripe, coralStripe);
+    // Landing skids & cross-tubes
+    pushBoxMesh(verts, -1.25, 0.4, 0.0, 0.25, 0.25, 4.6, skidDark, skidDark);
+    pushBoxMesh(verts, 1.25, 0.4, 0.0, 0.25, 0.25, 4.6, skidDark, skidDark);
+    // Rotor hub & wide 4-blade main rotor cross
+    pushBoxMesh(verts, 0, 0.3, 2.8, 3.35, 0.45, 0.45, skidDark, skidDark);
+    pushBoxMesh(verts, 0, 0.3, 3.25, 3.42, 11.8, 0.52, rotorDark, rotorDark);
+    pushBoxMesh(verts, 0, 0.3, 3.25, 3.42, 0.52, 11.8, rotorDark, rotorDark);
+    return finalizeMesh(verts);
+  }
+
+  const s = kind === "heavyJet" ? 1.0 : 0.76;
+  const tailRgb = kind === "heavyJet" ? ([0.08, 0.36, 0.72] as const) : ([0.86, 0.24, 0.24] as const);
+  const wingSpan = 21.0 * s;
+  const fuseLen = 17.0 * s;
+  const fuseW = 4.6 * s;
+
+  // Tapered nose cone & main fuselage
+  pushHullTapering(verts, 12.5 * s, 21.5 * s, 1.1 * s, 4.2 * s, fuseW * 0.5, 0.25 * s, whiteFuse, whiteFuse);
+  pushBoxMesh(verts, 0, -1.5 * s, 0.9 * s, 4.7 * s, fuseW, fuseLen * 1.65, whiteFuse, whiteFuse);
+  pushBoxMesh(verts, 0, -1.5 * s, 2.5 * s, 3.05 * s, fuseW * 1.02, fuseLen * 1.60, tailRgb, tailRgb);
+  pushBoxMesh(verts, 0, 15.6 * s, 2.75 * s, 3.6 * s, fuseW * 0.62, 2.4 * s, cockpitGlass, whiteFuse);
+  // Tapered tail cone
+  pushHullTapering(verts, -15.5 * s, -21.0 * s, 1.5 * s, 3.8 * s, 0.4 * s, fuseW * 0.48, whiteFuse, whiteFuse);
+
+  // Swept main wings + wingtip navigation lights
+  pushSweptWingPair(
+    verts,
+    5.5 * s,
+    -3.5 * s,
+    2.0 * s,
+    -8.4 * s,
+    -11.2 * s,
+    wingSpan,
+    1.6 * s,
+    2.25 * s,
+    wingSilver,
+    wingUnder,
+  );
+  pushBoxMesh(verts, -wingSpan + 0.4 * s, -9.8 * s, 1.9 * s, 2.5 * s, 0.9 * s, 1.6 * s, portRed, portRed);
+  pushBoxMesh(verts, wingSpan - 0.4 * s, -9.8 * s, 1.9 * s, 2.5 * s, 0.9 * s, 1.6 * s, starGreen, starGreen);
+
+  // Twin underwing turbofans
+  pushBoxMesh(verts, -7.8 * s, 1.8 * s, 0.15 * s, 1.9 * s, 2.2 * s, 4.4 * s, engineNacelle, engineNacelle);
+  pushBoxMesh(verts, 7.8 * s, 1.8 * s, 0.15 * s, 1.9 * s, 2.2 * s, 4.4 * s, engineNacelle, engineNacelle);
+
+  // Horizontal stabilizers & tall vertical tailfin
+  pushSweptWingPair(
+    verts,
+    -14.5 * s,
+    -18.2 * s,
+    0.7 * s,
+    -18.5 * s,
+    -20.4 * s,
+    7.6 * s,
+    2.5 * s,
+    2.95 * s,
+    wingSilver,
+    wingUnder,
+  );
+  pushBoxMesh(verts, 0, -17.6 * s, 4.2 * s, 11.4 * s, 0.72 * s, 5.2 * s, tailRgb, tailRgb);
+
+  return finalizeMesh(verts);
+}
+
+function buildPlaneShadowMesh(kind: PlaneMeshKind): MeshData {
+  const verts: number[] = [];
+  const shadowDark = [0.06, 0.08, 0.12] as const;
+
+  if (kind === "heli") {
+    pushBoxMesh(verts, 0, 0, 0, 0.12, 2.2, 8.2, shadowDark, shadowDark);
+    pushBoxMesh(verts, 0, 0.3, 0, 0.12, 10.6, 0.85, shadowDark, shadowDark);
+    pushBoxMesh(verts, 0, 0.3, 0, 0.12, 0.85, 10.6, shadowDark, shadowDark);
+    return finalizeMesh(verts);
+  }
+
+  const s = kind === "heavyJet" ? 1.0 : 0.76;
+  pushBoxMesh(verts, 0, -1.0 * s, 0, 0.12, 4.2 * s, 35.0 * s, shadowDark, shadowDark);
+  pushSweptWingPair(
+    verts,
+    5.2 * s,
+    -3.4 * s,
+    1.8 * s,
+    -8.4 * s,
+    -11.0 * s,
+    20.5 * s,
+    0,
+    0.12,
+    shadowDark,
+    shadowDark,
+  );
+  pushSweptWingPair(
+    verts,
+    -14.5 * s,
+    -18.0 * s,
+    0.6 * s,
+    -18.5 * s,
+    -20.3 * s,
+    7.4 * s,
+    0,
+    0.12,
+    shadowDark,
+    shadowDark,
+  );
+  return finalizeMesh(verts);
+}
+
 function createStaticMeshVao(
   gl: WebGL2RenderingContext,
   mesh: MeshData,
@@ -509,10 +810,15 @@ export interface OverlayRenderOptions {
   reducedMotion: boolean;
   selectedVehicleId: string | null;
   selectedTrainId: string | null;
+  selectedPlaneId?: string | null;
+  selectedAirCabinId?: string | null;
   selectedPortCallId: string | null;
   gcps: readonly GroundControlPoint[];
   deckTestPoint: { lon: number; lat: number; elevationM: number };
   portCalls: readonly AnimatedPortCall[];
+  planes?: readonly ResolvedPlane[];
+  airCabins?: readonly ResolvedAirCabinGondola[];
+  showAirCabin?: boolean;
 }
 
 export class WebGLOverlay {
@@ -553,6 +859,20 @@ export class WebGLOverlay {
   >;
   private readonly boatMeshes: Record<
     VesselKind,
+    { vao: WebGLVertexArrayObject; count: number }
+  >;
+  private readonly airCabinOriginLocalM: readonly [number, number, number];
+  private readonly airCabinStructureMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly airCabinGondolaMeshes: {
+    day: { vao: WebGLVertexArrayObject; count: number };
+    night: { vao: WebGLVertexArrayObject; count: number };
+  };
+  private readonly planeMeshes: Record<
+    PlaneMeshKind,
+    { vao: WebGLVertexArrayObject; count: number }
+  >;
+  private readonly planeShadowMeshes: Record<
+    PlaneMeshKind,
     { vao: WebGLVertexArrayObject; count: number }
   >;
   private readonly wakeMesh: { vao: WebGLVertexArrayObject; count: number };
@@ -793,6 +1113,25 @@ export class WebGLOverlay {
 
     this.wakeMesh = createStaticMeshVao(gl, buildWakeMesh());
 
+    const cabinBuilt = buildAirCabinStructureMesh(camera);
+    this.airCabinOriginLocalM = cabinBuilt.originLocalM;
+    this.airCabinStructureMesh = createStaticMeshVao(gl, cabinBuilt.mesh);
+    this.airCabinGondolaMeshes = {
+      day: createStaticMeshVao(gl, buildAirCabinGondolaMesh(false)),
+      night: createStaticMeshVao(gl, buildAirCabinGondolaMesh(true)),
+    };
+
+    this.planeMeshes = {
+      heavyJet: createStaticMeshVao(gl, buildPlaneMesh("heavyJet")),
+      narrowJet: createStaticMeshVao(gl, buildPlaneMesh("narrowJet")),
+      heli: createStaticMeshVao(gl, buildPlaneMesh("heli")),
+    };
+    this.planeShadowMeshes = {
+      heavyJet: createStaticMeshVao(gl, buildPlaneShadowMesh("heavyJet")),
+      narrowJet: createStaticMeshVao(gl, buildPlaneShadowMesh("narrowJet")),
+      heli: createStaticMeshVao(gl, buildPlaneShadowMesh("heli")),
+    };
+
     const mVao = gl.createVertexArray();
     const mBuf = gl.createBuffer();
     if (!mVao || !mBuf) throw new Error("Failed to create marker buffer");
@@ -1022,11 +1361,16 @@ export class WebGLOverlay {
       }
     }
 
-    // 2. 3D Depth-Occluded Wakes, Ships, Multi-Livery Buses, Multi-Car Trains & Ambient Cars
+    // 2. 3D Depth-Occluded Wakes, Ships, Multi-Livery Buses, Multi-Car Trains, Air Cabin, Shadows & Ambient Cars
+    const planes = opts.planes ?? [];
+    const airCabins = opts.airCabins ?? [];
+    const showAirCabin = Boolean(opts.showAirCabin);
     const hasMovingObjects =
       opts.vehicles.length > 0 ||
       opts.portCalls.length > 0 ||
       opts.trains.length > 0 ||
+      showAirCabin ||
+      planes.length > 0 ||
       hasAmbientCars;
     if (hasMovingObjects) {
       gl.enable(gl.DEPTH_TEST);
@@ -1206,6 +1550,81 @@ export class WebGLOverlay {
           gl.uniform1f(uIsOutlineLoc, 0);
         }
       }
+
+      // 2f. YOKOHAMA AIR CABIN support pylons, haul cables & 16 circulating glass gondolas
+      if (showAirCabin) {
+        gl.bindVertexArray(this.airCabinStructureMesh.vao);
+        gl.uniform3f(
+          uOriginLoc,
+          this.airCabinOriginLocalM[0],
+          this.airCabinOriginLocalM[1],
+          this.airCabinOriginLocalM[2],
+        );
+        gl.uniform1f(uHeadingLoc, 0);
+        gl.uniform3f(uScaleLoc, 1, 1, 1);
+        gl.uniform3f(uTintLoc, vBri, vBri, vBri);
+        gl.uniform1f(uSelectedLoc, 0);
+        gl.uniform1f(uGhostLoc, 0);
+        gl.uniform1f(uAlphaLoc, 1.0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.airCabinStructureMesh.count);
+
+        const gondolaMesh =
+          opts.nightIntensity > 0.35
+            ? this.airCabinGondolaMeshes.night
+            : this.airCabinGondolaMeshes.day;
+        gl.bindVertexArray(gondolaMesh.vao);
+        const gondolaNightGlow = opts.nightIntensity > 0.35 ? 1.0 + opts.nightIntensity * 0.25 : 1.0;
+
+        for (const cabin of airCabins) {
+          const isSelected = opts.selectedAirCabinId === cabin.id;
+          const sTint = isSelected ? 1.24 : 1.0;
+          const localPos = wgs84ToLocal(c, cabin.lon, cabin.lat, cabin.cableElevM);
+          gl.uniform3f(uOriginLoc, localPos[0], localPos[1], localPos[2]);
+          gl.uniform1f(uHeadingLoc, (cabin.bearingDeg * Math.PI) / 180);
+          gl.uniform3f(uScaleLoc, 1, 1, 1);
+          gl.uniform3f(
+            uTintLoc,
+            sTint * vBri * gondolaNightGlow,
+            sTint * vBri * gondolaNightGlow,
+            sTint * vBri * gondolaNightGlow,
+          );
+          gl.uniform1f(uSelectedLoc, isSelected ? 1 : 0);
+          gl.uniform1f(uGhostLoc, isSelected ? 0.35 : 0.14);
+          gl.uniform1f(uAlphaLoc, 1.0);
+          gl.drawArrays(gl.TRIANGLES, 0, gondolaMesh.count);
+
+          if (imgPxPerCssPx < 2.6) {
+            gl.uniform1f(uOutlineExpandLoc, 0.12);
+            gl.uniform1f(uIsOutlineLoc, 1);
+            gl.drawArrays(gl.TRIANGLES, 0, gondolaMesh.count);
+            gl.uniform1f(uOutlineExpandLoc, 0);
+            gl.uniform1f(uIsOutlineLoc, 0);
+          }
+        }
+      }
+
+      // 2g. Projected soft ground shadows under live ADS-B / harbor aircraft
+      const planeScale = Math.min(2.15, Math.max(0.95, 0.85 + imgPxPerCssPx * 0.14));
+      if (planes.length > 0 && !opts.xrayOcclusion) {
+        gl.depthMask(false);
+        gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_depthBiasM"), 3.0);
+        gl.uniform1f(uSelectedLoc, 0);
+        gl.uniform1f(uGhostLoc, 0);
+        gl.uniform1f(uAlphaLoc, Math.max(0.05, 0.22 * (1.0 - opts.nightIntensity * 0.72)));
+        gl.uniform3f(uTintLoc, 1, 1, 1);
+
+        for (const p of planes) {
+          const sMesh = this.planeShadowMeshes[p.meshKind];
+          gl.bindVertexArray(sMesh.vao);
+          const localPos = wgs84ToLocal(c, p.lon, p.lat, 2.0);
+          gl.uniform3f(uOriginLoc, localPos[0] + 28, localPos[1] + 18, localPos[2]);
+          gl.uniform1f(uHeadingLoc, (p.trackDeg * Math.PI) / 180);
+          gl.uniform3f(uScaleLoc, planeScale, planeScale, 1);
+          gl.drawArrays(gl.TRIANGLES, 0, sMesh.count);
+        }
+        gl.depthMask(true);
+        gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_depthBiasM"), 0.14);
+      }
     }
 
     // 2b. Fluffy Zoomed-Out Cumulus Clouds framing outer areas & canvas sky edge
@@ -1245,6 +1664,83 @@ export class WebGLOverlay {
     );
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // 2c. High-altitude 3D ADS-B & Haneda/Bay Aircraft rendered above clouds and skyscrapers
+    if (planes.length > 0) {
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.useProgram(this.vehicleProg);
+      this.bindCommonDepthUniforms(this.vehicleProg);
+
+      const c = this.camera;
+      gl.uniform3fv(
+        gl.getUniformLocation(this.vehicleProg, "u_cameraOriginLocalM"),
+        c.cameraOriginLocalM,
+      );
+      gl.uniform3fv(gl.getUniformLocation(this.vehicleProg, "u_camRight"), c.basis.right);
+      gl.uniform3fv(gl.getUniformLocation(this.vehicleProg, "u_camUp"), c.basis.up);
+      gl.uniform3fv(gl.getUniformLocation(this.vehicleProg, "u_camForward"), c.basis.forward);
+      gl.uniform2f(
+        gl.getUniformLocation(this.vehicleProg, "u_imageOriginPx"),
+        c.imageOriginPx.x,
+        c.imageOriginPx.y,
+      );
+      gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_metersPerPixel"), c.metersPerPixel);
+      gl.uniform2f(
+        gl.getUniformLocation(this.vehicleProg, "u_viewTopLeftPx"),
+        opts.viewTopLeftImgPx.x,
+        opts.viewTopLeftImgPx.y,
+      );
+      gl.uniform2f(
+        gl.getUniformLocation(this.vehicleProg, "u_viewBottomRightPx"),
+        opts.viewBottomRightImgPx.x,
+        opts.viewBottomRightImgPx.y,
+      );
+      gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_depthBiasM"), 500.0);
+      gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_xrayMode"), opts.xrayOcclusion ? 1 : 0);
+
+      const uOriginLoc = gl.getUniformLocation(this.vehicleProg, "u_vehicleOriginLocalM");
+      const uHeadingLoc = gl.getUniformLocation(this.vehicleProg, "u_headingRad");
+      const uScaleLoc = gl.getUniformLocation(this.vehicleProg, "u_meshScale");
+      const uTintLoc = gl.getUniformLocation(this.vehicleProg, "u_tint");
+      const uSelectedLoc = gl.getUniformLocation(this.vehicleProg, "u_isSelected");
+      const uGhostLoc = gl.getUniformLocation(this.vehicleProg, "u_occludedGhostAlpha");
+      const uOutlineExpandLoc = gl.getUniformLocation(this.vehicleProg, "u_outlineExpandM");
+      const uIsOutlineLoc = gl.getUniformLocation(this.vehicleProg, "u_isOutline");
+      const uAlphaLoc = gl.getUniformLocation(this.vehicleProg, "u_alpha");
+
+      const planeScale = Math.min(2.15, Math.max(0.95, 0.85 + imgPxPerCssPx * 0.14));
+      const vBri = Math.max(0.90, opts.vehicleBrightness) * (1.0 + opts.nightIntensity * 0.22);
+
+      for (const p of planes) {
+        const mesh = this.planeMeshes[p.meshKind];
+        gl.bindVertexArray(mesh.vao);
+        const isSelected = opts.selectedPlaneId === p.id;
+        const sTint = isSelected ? 1.2 : 1.0;
+        const localPos = wgs84ToLocal(c, p.lon, p.lat, p.displayElevM);
+
+        gl.uniform3f(uOriginLoc, localPos[0], localPos[1], localPos[2]);
+        gl.uniform1f(uHeadingLoc, (p.trackDeg * Math.PI) / 180);
+        gl.uniform3f(uScaleLoc, planeScale, planeScale, planeScale);
+        gl.uniform3f(uTintLoc, sTint * vBri, sTint * vBri, sTint * vBri);
+        gl.uniform1f(uSelectedLoc, isSelected ? 1 : 0);
+        gl.uniform1f(uGhostLoc, 0.35);
+        gl.uniform1f(uOutlineExpandLoc, 0);
+        gl.uniform1f(uIsOutlineLoc, 0);
+        gl.uniform1f(uAlphaLoc, 1.0);
+        gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+
+        if (imgPxPerCssPx < 4.5) {
+          gl.uniform1f(uOutlineExpandLoc, 0.24);
+          gl.uniform1f(uIsOutlineLoc, 1);
+          gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+          gl.uniform1f(uOutlineExpandLoc, 0);
+          gl.uniform1f(uIsOutlineLoc, 0);
+        }
+      }
+
+      gl.disable(gl.DEPTH_TEST);
+    }
 
     // 3. Synchronized Verification Point Markers (Deck point, GCPs)
     gl.useProgram(this.markerProg);

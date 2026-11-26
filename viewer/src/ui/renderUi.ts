@@ -3,8 +3,11 @@ import {
   type Landmark,
   type PoiRecord,
 } from "@small-yokohama/core";
+import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
+import type { ResolvedPlane } from "../data/planeFeed.js";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
-import type { ResolvedTrain } from "../data/trainFeed.js";
+import { resolveStationDepartures } from "../data/stationDepartures.js";
+import type { ResolvedTrain, YokohamaRailBundle } from "../data/trainFeed.js";
 import type { AnimatedPortCall, ResolvedFeedState } from "../data/vehicleFeed.js";
 import type { WeatherMode } from "../data/weatherFeed.js";
 import {
@@ -25,6 +28,8 @@ export type BooleanOptionKey =
   | "showTrains"
   | "showBuses"
   | "showBoats"
+  | "showPlanes"
+  | "showAirCabin"
   | "showTraffic"
   | "showPedestrians"
   | "showLabels"
@@ -58,6 +63,8 @@ export interface UiHandlers {
   onSelectPoi: (poi: PoiRecord) => void;
   onSelectPortCall: (pc: AnimatedPortCall) => void;
   onSelectTrain: (tr: ResolvedTrain) => void;
+  onSelectPlane?: (p: ResolvedPlane) => void;
+  onSelectAirCabin?: (c: ResolvedAirCabinGondola) => void;
   onClearSelection: () => void;
   onToggleSound: () => void;
   onToggleFollow: () => void;
@@ -128,6 +135,8 @@ function buildSearchResultsHtml(
   state: ViewerState,
   bundle: LoadedReleaseBundle,
   feed: ResolvedFeedState | null,
+  planes: readonly ResolvedPlane[] = [],
+  airCabins: readonly ResolvedAirCabinGondola[] = [],
 ): string {
   const d = getDict(state.lang);
   const q = state.searchQuery.trim().toLowerCase();
@@ -136,10 +145,41 @@ function buildSearchResultsHtml(
     | { kind: "landmark"; id: string; title: string; sub: string; score: number }
     | { kind: "poi"; poi: PoiRecord; title: string; sub: string; score: number }
     | { kind: "building"; featureId: number; title: string; sub: string; score: number }
+    | { kind: "aircabin"; cabin: ResolvedAirCabinGondola; title: string; sub: string; score: number }
+    | { kind: "plane"; plane: ResolvedPlane; title: string; sub: string; score: number }
     | { kind: "portcall"; pc: AnimatedPortCall; title: string; sub: string; score: number };
 
   const hits: SearchHit[] = [];
   const seenKeys = new Set<string>();
+
+  if (airCabins.length > 0) {
+    const cabinHay = "yokohama air cabin エアキャビン ロープウェイ ゴンドラ 桜木町 sakuragicho unga park 運河パーク";
+    if (!q || cabinHay.includes(q)) {
+      const sampleCabin =
+        airCabins.find((c) => Math.abs(c.progress01 - 0.5) < 0.2) ?? airCabins[0]!;
+      hits.push({
+        kind: "aircabin",
+        cabin: sampleCabin,
+        title: d.airCabinName,
+        sub: state.lang === "en" ? "Sakuragicho <-> Unga Park Ropeway" : "桜木町駅前 ↔ 運河パーク駅 ロープウェイ",
+        score: 0.4,
+      });
+    }
+  }
+
+  for (const p of planes) {
+    const title = `${p.callsign} (${state.lang === "en" ? p.airlineEn : p.airlineJa})`;
+    const hay = `${p.callsign} ${p.airlineJa} ${p.airlineEn} ${p.aircraftType} ${p.registration} 飛行機 plane flight`.toLowerCase();
+    if (q && hay.includes(q)) {
+      hits.push({
+        kind: "plane",
+        plane: p,
+        title,
+        sub: `${d.planeKinds[p.meshKind]} · ${p.altitudeM} m`,
+        score: 0.8,
+      });
+    }
+  }
 
   for (const lm of bundle.landmarks) {
     const title = state.lang === "en" ? lm.nameEn : lm.nameJa;
@@ -231,6 +271,12 @@ function buildSearchResultsHtml(
       if (h.kind === "building") {
         return `<li><button type="button" data-feature-id="${h.featureId}"><span class="r-name">${escapeHtml(h.title)}</span><span class="r-sub">${escapeHtml(h.sub)}</span></button></li>`;
       }
+      if (h.kind === "aircabin") {
+        return `<li><button type="button" data-aircabin-id="${escapeHtml(h.cabin.id)}"><span class="r-name">${escapeHtml(h.title)}</span><span class="r-sub">${escapeHtml(h.sub)}</span></button></li>`;
+      }
+      if (h.kind === "plane") {
+        return `<li><button type="button" data-plane-id="${escapeHtml(h.plane.id)}"><span class="r-name">${escapeHtml(h.title)}</span><span class="r-sub">${escapeHtml(h.sub)}</span></button></li>`;
+      }
       return `<li><button type="button" data-portcall-id="${escapeHtml(h.pc.id)}"><span class="r-name">${escapeHtml(h.title)}</span><span class="r-sub">${escapeHtml(h.sub)}</span></button></li>`;
     })
     .join("");
@@ -241,6 +287,8 @@ function bindListSelections(
   bundle: LoadedReleaseBundle,
   feed: ResolvedFeedState | null,
   handlers: UiHandlers,
+  planes: readonly ResolvedPlane[] = [],
+  airCabins: readonly ResolvedAirCabinGondola[] = [],
 ): void {
   container.querySelectorAll<HTMLButtonElement>("button[data-landmark-id]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -260,6 +308,20 @@ function bindListSelections(
     btn.addEventListener("click", () => {
       const fid = Number(btn.dataset.featureId);
       if (Number.isFinite(fid)) handlers.onSelectFeatureId(fid);
+    });
+  });
+
+  container.querySelectorAll<HTMLButtonElement>("button[data-aircabin-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const cabin = airCabins.find((c) => c.id === btn.dataset.aircabinId) ?? airCabins[0];
+      if (cabin) handlers.onSelectAirCabin?.(cabin);
+    });
+  });
+
+  container.querySelectorAll<HTMLButtonElement>("button[data-plane-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = planes.find((x) => x.id === btn.dataset.planeId);
+      if (p) handlers.onSelectPlane?.(p);
     });
   });
 
@@ -357,6 +419,8 @@ export function renderDrop(
   feed: ResolvedFeedState | null,
   handlers: UiHandlers,
   trains: readonly ResolvedTrain[] = [],
+  planes: readonly ResolvedPlane[] = [],
+  airCabins: readonly ResolvedAirCabinGondola[] = [],
 ): void {
   if (!state.activeTab) {
     el.hidden = true;
@@ -375,8 +439,8 @@ export function renderDrop(
       if (existingInput.value !== state.searchQuery) {
         existingInput.value = state.searchQuery;
       }
-      existingList.innerHTML = buildSearchResultsHtml(state, bundle, feed);
-      bindListSelections(existingList, bundle, feed, handlers);
+      existingList.innerHTML = buildSearchResultsHtml(state, bundle, feed, planes, airCabins);
+      bindListSelections(existingList, bundle, feed, handlers, planes, airCabins);
       return;
     }
 
@@ -390,14 +454,14 @@ export function renderDrop(
         <input id="inp-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="${escapeHtml(d.searchPlaceholder)}" value="${escapeHtml(state.searchQuery)}" />
       </div>
       <ul id="search-results" class="results">
-        ${buildSearchResultsHtml(state, bundle, feed)}
+        ${buildSearchResultsHtml(state, bundle, feed, planes, airCabins)}
       </ul>
     `;
 
     const input = el.querySelector<HTMLInputElement>("#inp-search");
     const resultsEl = el.querySelector<HTMLElement>("#search-results");
     if (resultsEl) {
-      bindListSelections(resultsEl, bundle, feed, handlers);
+      bindListSelections(resultsEl, bundle, feed, handlers, planes, airCabins);
     }
     input?.addEventListener("input", () => {
       handlers.onSearchQuery(input.value);
@@ -412,7 +476,7 @@ export function renderDrop(
 
   if (state.activeTab === "places") {
     el.innerHTML = `<div class="page">${renderPlacesGroupsHtml(state, bundle, feed)}</div>`;
-    bindListSelections(el, bundle, feed, handlers);
+    bindListSelections(el, bundle, feed, handlers, planes, airCabins);
     return;
   }
 
@@ -420,9 +484,25 @@ export function renderDrop(
   const trainCount = trains.length;
   const busCount = feed?.vehicles.length ?? 0;
   const boatCount = feed?.portCalls.length ?? 0;
+  const planeCount = planes.length;
+  const nearbyPlanes = planes[0]?.nearbyCount ?? 0;
+  const hasObservedBus = feed?.vehicles.some((rv) => rv.displayMode === "observed") ?? false;
   const trainLabel = state.lang === "en" ? `${trainCount} live` : `${trainCount}編成`;
-  const busLabel = state.lang === "en" ? `${busCount} live` : `${busCount}台`;
+  const busLabel =
+    state.lang === "en"
+      ? `${busCount}${hasObservedBus ? " live" : " fleet"}`
+      : `${busCount}台${hasObservedBus ? " (実測)" : ""}`;
   const boatLabel = state.lang === "en" ? `${boatCount} scheduled` : `${boatCount}隻`;
+  const planeLabel =
+    nearbyPlanes > 0
+      ? state.lang === "en"
+        ? `${planeCount} · ${nearbyPlanes} ${d.nearbyHaneda}`
+        : `${planeCount}機 · ${d.nearbyHaneda} ${nearbyPlanes}`
+      : state.lang === "en"
+        ? `${planeCount} flights`
+        : `${planeCount}機`;
+  const cabinLabel =
+    state.lang === "en" ? `${airCabins.length || 16} cabins` : `${airCabins.length || 16}基`;
   const presets = getSkyPresetsForDate(new Date());
   const skyItems: Array<{ label: string; value: number | null }> = [
     { label: d.skyPresets.day, value: presets.day },
@@ -452,6 +532,14 @@ export function renderDrop(
       <button type="button" class="layer-btn" data-toggle="showBoats" aria-pressed="${state.showBoats}">
         <span>${escapeHtml(d.layerBoats)}</span>
         <small>${escapeHtml(boatLabel)}</small>
+      </button>
+      <button type="button" class="layer-btn" data-toggle="showAirCabin" aria-pressed="${state.showAirCabin}">
+        <span>${escapeHtml(d.layerAirCabin)}</span>
+        <small>${escapeHtml(cabinLabel)}</small>
+      </button>
+      <button type="button" class="layer-btn" data-toggle="showPlanes" aria-pressed="${state.showPlanes}">
+        <span>${escapeHtml(d.layerPlanes)}</span>
+        <small>${escapeHtml(planeLabel)}</small>
       </button>
       <button type="button" class="layer-btn" data-toggle="showTraffic" aria-pressed="${state.showTraffic}">
         <span>${escapeHtml(d.layerTraffic)}</span>
@@ -562,6 +650,71 @@ export function renderDrop(
   });
 }
 
+function buildStationBoardHtml(
+  stationId: string | undefined,
+  nameJa: string,
+  nameEn: string,
+  category: string | undefined,
+  state: ViewerState,
+  railBundle: YokohamaRailBundle | null,
+  trains: readonly ResolvedTrain[],
+): string {
+  const board = resolveStationDepartures(
+    stationId,
+    nameJa,
+    nameEn,
+    category,
+    railBundle,
+    trains,
+    state.simTimeSec,
+  );
+  if (!board) return "";
+  const d = getDict(state.lang);
+  const en = state.lang === "en";
+  const statusTag = board.hasLiveTelemetry ? d.departureLiveBadge : d.departureSchedBadge;
+  const rowsHtml =
+    board.isOvernightPause || board.departures.length === 0
+      ? `<p class="dep-empty">${escapeHtml(d.departureOvernight)}</p>`
+      : `<ul class="dep-list">${board.departures
+          .map((row) => {
+            const dest = en ? row.destinationEn : row.destinationJa;
+            const svc = en ? row.trainTypeEn : row.trainTypeJa;
+            const etaText =
+              row.secondsUntil <= 40
+                ? d.departureDue
+                : en
+                  ? `${row.minutesUntil} ${d.departureMin}`
+                  : `${row.minutesUntil}${d.departureMin}`;
+            const delayBadge =
+              row.delayMin > 0
+                ? `<span class="dep-delay">+${row.delayMin}m</span>`
+                : "";
+            return `
+              <li class="dep-row">
+                <span class="dep-line" style="background:${escapeHtml(row.lineColorHex)}">${escapeHtml(row.lineCode)}</span>
+                <span class="dep-mid">
+                  <span class="dep-dest">${escapeHtml(dest)}</span>
+                  <span class="dep-type">${escapeHtml(svc)}</span>
+                </span>
+                <span class="dep-right">
+                  ${delayBadge}
+                  <span class="dep-eta${row.secondsUntil <= 40 ? " due" : ""}">${escapeHtml(etaText)}</span>
+                </span>
+              </li>`;
+          })
+          .join("")}</ul>`;
+
+  return `
+    <div class="dep-board">
+      <div class="dep-head">
+        <span>${escapeHtml(d.departureBoardTitle)}</span>
+        <span class="dep-mode ${board.hasLiveTelemetry ? "live" : ""}">${escapeHtml(statusTag)}</span>
+      </div>
+      ${rowsHtml}
+    </div>
+  `;
+}
+
 export function renderCard(
   el: HTMLElement,
   state: ViewerState,
@@ -569,6 +722,9 @@ export function renderCard(
   driftCssPx: number,
   handlers: UiHandlers,
   trains: readonly ResolvedTrain[] = [],
+  planes: readonly ResolvedPlane[] = [],
+  airCabins: readonly ResolvedAirCabinGondola[] = [],
+  railBundle: YokohamaRailBundle | null = null,
 ): void {
   const sel = state.selected;
   if (!sel) {
@@ -582,6 +738,7 @@ export function renderCard(
   let sub = "";
   let badgeHtml = "";
   let bodyNote = "";
+  let extraBlockHtml = "";
   let rowsHtml = "";
   let gmapsUrl = "";
 
@@ -632,12 +789,71 @@ export function renderCard(
       <dd>${escapeHtml(state.lang === "en" ? tr.sourceEn : tr.sourceJa)}</dd>
     `;
     gmapsUrl = buildGoogleMapsUrl(tr.lat, tr.lon, state.lang === "en" ? tr.lineNameEn : tr.lineNameJa);
+  } else if (sel.kind === "plane") {
+    const p = planes.find((x) => x.id === sel.plane.id) ?? sel.plane;
+    const modeLabel = d.modeLabels[p.mode];
+    const badgeCls = p.mode === "observed" ? "observed" : "";
+    title = p.callsign;
+    sub = state.lang === "en" ? p.airlineEn : p.airlineJa;
+    badgeHtml = `<span class="badge ${badgeCls}">${escapeHtml(modeLabel)}</span>`;
+    const vRateStr =
+      Math.abs(p.verticalRateFpm) >= 64
+        ? `${p.verticalRateFpm > 0 ? "+" : ""}${p.verticalRateFpm} fpm`
+        : "0 fpm";
+    const nearbyRow =
+      p.nearbyCount > 0
+        ? `<dt>${escapeHtml(d.nearbyHaneda)}</dt><dd>${p.nearbyCount}</dd>`
+        : "";
+    rowsHtml = `
+      <dt>${escapeHtml(d.fields.aircraft)}</dt>
+      <dd>${escapeHtml(p.aircraftType)} · ${escapeHtml(d.planeKinds[p.meshKind])}</dd>
+      ${p.registration ? `<dt>${escapeHtml(d.fields.registration)}</dt><dd>${escapeHtml(p.registration)}</dd>` : ""}
+      <dt>${escapeHtml(d.fields.altitude)}</dt>
+      <dd>${p.altitudeM.toLocaleString()} m (${p.altitudeFt.toLocaleString()} ft)</dd>
+      <dt>${escapeHtml(d.fields.speed)}</dt>
+      <dd>${p.groundSpeedKmh} km/h (${p.groundSpeedKt} kt)</dd>
+      <dt>${escapeHtml(d.fields.heading)}</dt>
+      <dd>${Math.round(p.trackDeg)}°</dd>
+      <dt>${escapeHtml(d.fields.verticalRate)}</dt>
+      <dd>${escapeHtml(vRateStr)}</dd>
+      ${nearbyRow}
+      <dt>${escapeHtml(d.fields.source)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? p.sourceEn : p.sourceJa)}</dd>
+    `;
+    gmapsUrl = buildGoogleMapsUrl(p.lat, p.lon, p.callsign);
+  } else if (sel.kind === "aircabin") {
+    const c = airCabins.find((x) => x.id === sel.cabin.id) ?? sel.cabin;
+    title = `${d.airCabinName} #${c.cabinNumber}`;
+    sub = state.lang === "en" ? c.directionEn : c.directionJa;
+    badgeHtml = `<span class="badge">${escapeHtml(d.modeLabels.scheduled)}</span>`;
+    rowsHtml = `
+      <dt>${escapeHtml(d.fields.ropewaySection)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? c.sectionEn : c.sectionJa)}</dd>
+      <dt>${escapeHtml(d.fields.height)}</dt>
+      <dd>${c.cableElevM.toFixed(1)} m</dd>
+      <dt>${escapeHtml(d.fields.speed)}</dt>
+      <dd>${c.speedKmh.toFixed(1)} km/h</dd>
+      <dt>${escapeHtml(d.fields.eta)}</dt>
+      <dd>~${Math.ceil(c.etaSec / 60)} ${escapeHtml(state.lang === "en" ? "min" : "分")} (${c.etaSec}s)</dd>
+      <dt>${escapeHtml(d.fields.source)}</dt>
+      <dd>OpenStreetMap / SENYO</dd>
+    `;
+    gmapsUrl = buildGoogleMapsUrl(c.lat, c.lon, d.airCabinName);
   } else if (sel.kind === "landmark") {
     const lm = sel.landmark;
     title = state.lang === "en" ? lm.nameEn : lm.nameJa;
     sub = state.lang === "en" ? "" : lm.nameEn;
     badgeHtml = `<span class="badge">${escapeHtml(formatCategory(lm.category, state.lang))}</span>`;
     bodyNote = `<p class="card-sub" style="margin-top:6px;">${escapeHtml(state.lang === "en" ? lm.descriptionEn : lm.descriptionJa)}</p>`;
+    extraBlockHtml = buildStationBoardHtml(
+      lm.id,
+      lm.nameJa,
+      lm.nameEn,
+      lm.category,
+      state,
+      railBundle,
+      trains,
+    );
     const addr = lm.address ? formatAddress(lm.address, state.lang) : "";
     rowsHtml = `
       ${lm.heightM ? `<dt>${escapeHtml(d.fields.height)}</dt><dd>${lm.heightM.toFixed(1)} m</dd>` : ""}
@@ -653,6 +869,15 @@ export function renderCard(
     sub = state.lang === "en" ? "" : p.nameEn;
     badgeHtml = `<span class="badge">${escapeHtml(formatCategory(p.category, state.lang))}</span>`;
     bodyNote = `<p class="card-sub" style="margin-top:6px;">${escapeHtml(state.lang === "en" ? p.descriptionEn : p.descriptionJa)}</p>`;
+    extraBlockHtml = buildStationBoardHtml(
+      p.id,
+      p.nameJa,
+      p.nameEn,
+      p.category,
+      state,
+      railBundle,
+      trains,
+    );
     const addr = p.address ? formatAddress(p.address, state.lang) : "";
     rowsHtml = `
       ${p.heightM ? `<dt>${escapeHtml(d.fields.height)}</dt><dd>${p.heightM.toFixed(1)} m</dd>` : ""}
@@ -677,6 +902,15 @@ export function renderCard(
     bodyNote = desc
       ? `<p class="card-sub" style="margin-top:6px;">${escapeHtml(desc)}</p>`
       : "";
+    extraBlockHtml = buildStationBoardHtml(
+      f.poiId ?? f.landmarkId,
+      f.nameJa,
+      f.nameEn,
+      f.category,
+      state,
+      railBundle,
+      trains,
+    );
     const addr = f.address ? formatAddress(f.address, state.lang) : "";
     rowsHtml = `
       ${f.buildingType && f.buildingType !== "yes" && title !== kindLabel ? `<dt>${escapeHtml(d.fields.buildingType)}</dt><dd>${escapeHtml(kindLabel)}</dd>` : ""}
@@ -735,7 +969,11 @@ export function renderCard(
     ${badgeHtml}
     ${bodyNote}
     ${
-      sel.kind === "vehicle" || sel.kind === "train" || (sel.kind === "portcall" && sel.portCall.moving !== false)
+      sel.kind === "vehicle" ||
+      sel.kind === "train" ||
+      sel.kind === "plane" ||
+      sel.kind === "aircabin" ||
+      (sel.kind === "portcall" && sel.portCall.moving !== false)
         ? `<button type="button" class="follow-btn" id="btn-follow" aria-pressed="${state.following}">${
             state.following
               ? `<span class="follow-dot" aria-hidden="true"></span>${escapeHtml(d.followingLabel)}`
@@ -743,6 +981,7 @@ export function renderCard(
           }</button>`
         : ""
     }
+    ${extraBlockHtml}
     <dl class="card-dl">${rowsHtml}</dl>
     <a class="gmaps-link" href="${escapeHtml(gmapsUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.openGoogleMaps)}</a>
   `;
@@ -757,6 +996,7 @@ export function renderStatus(
   feed: ResolvedFeedState | null,
   trains: readonly ResolvedTrain[] = [],
   weatherStatusText?: string,
+  planes: readonly ResolvedPlane[] = [],
 ): void {
   const d = getDict(state.lang);
   const sunDate = getSunDateForHourJst(state.sunHourJst);
@@ -774,12 +1014,19 @@ export function renderStatus(
   const trainCount = state.showTrains ? trains.length : 0;
   const busCount = state.showBuses ? (feed?.vehicles.length ?? 0) : 0;
   const boatCount = state.showBoats ? (feed?.portCalls.length ?? 0) : 0;
+  const planeCount = state.showPlanes ? planes.length : 0;
+  const planeChip =
+    planeCount > 0
+      ? state.lang === "en"
+        ? `<span class="g"><span class="live-n">${planeCount}</span> ${planeCount === 1 ? "flight" : "flights"}</span>`
+        : `<span class="g">飛行機 <span class="live-n">${planeCount}</span></span>`
+      : "";
   const tvSuffix = state.tvMode ? `<span class="g">${escapeHtml(d.tvTourLabel)}</span>` : "";
 
   const countsHtml =
     state.lang === "en"
-      ? `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span><span class="live-n">${trainCount}</span> trains</span><span class="g"><span class="live-n">${busCount}</span> buses</span><span class="g"><span class="live-n">${boatCount}</span> ships</span>`
-      : `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>電車 <span class="live-n">${trainCount}</span></span><span class="g">バス <span class="live-n">${busCount}</span></span><span class="g">客船 <span class="live-n">${boatCount}</span></span>`;
+      ? `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span><span class="live-n">${trainCount}</span> trains</span><span class="g"><span class="live-n">${busCount}</span> buses</span><span class="g"><span class="live-n">${boatCount}</span> ships</span>${planeChip}`
+      : `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>電車 <span class="live-n">${trainCount}</span></span><span class="g">バス <span class="live-n">${busCount}</span></span><span class="g">客船 <span class="live-n">${boatCount}</span></span>${planeChip}`;
 
   const nextHtml = `<span class="status-when">${escapeHtml(timeText)}</span><span class="status-now"><span class="g">${escapeHtml(skyText)}</span>${countsHtml}${tvSuffix}</span>`;
   if (el.innerHTML !== nextHtml) {

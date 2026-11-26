@@ -37,6 +37,20 @@ export function describePick(pick: MapPick, lang: Lang): TipText {
         sub: next ? (en ? `Next: ${next}` : `次は ${next}`) : en ? tr.directionEn : tr.directionJa,
       };
     }
+    case "plane": {
+      const p = pick.plane;
+      return {
+        title: `${p.callsign} (${en ? p.airlineEn : p.airlineJa})`,
+        sub: `${d.planeKinds[p.meshKind]} · ${p.altitudeM.toLocaleString()} m · ${Math.round(p.groundSpeedKmh)} km/h`,
+      };
+    }
+    case "aircabin": {
+      const c = pick.cabin;
+      return {
+        title: `${d.airCabinName} #${c.cabinNumber}`,
+        sub: `${en ? c.directionEn : c.directionJa} · ${Math.round(c.cableElevM)} m`,
+      };
+    }
     case "portcall": {
       const pc = pick.portCall;
       const kind = d.vesselKinds[pc.vesselKind ?? "cruise"];

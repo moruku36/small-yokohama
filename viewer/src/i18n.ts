@@ -18,6 +18,8 @@ export interface I18nDict {
   layerTrains: string;
   layerBuses: string;
   layerBoats: string;
+  layerPlanes: string;
+  layerAirCabin: string;
   layerTraffic: string;
   layerPedestrians: string;
   layerLabels: string;
@@ -80,8 +82,28 @@ export interface I18nDict {
     trainType: string;
     nextStop: string;
     cars: string;
+    callsign: string;
+    aircraft: string;
+    registration: string;
+    altitude: string;
+    speed: string;
+    heading: string;
+    verticalRate: string;
+    ropewaySection: string;
+    cabinNumber: string;
+    eta: string;
   };
   vesselKinds: Record<"cruise" | "cruiser" | "waterbus" | "tug", string>;
+  planeKinds: Record<"heavyJet" | "narrowJet" | "heli", string>;
+  airCabinName: string;
+  departureBoardTitle: string;
+  departureDue: string;
+  departureMin: string;
+  departureDelayed: string;
+  departureOvernight: string;
+  departureLiveBadge: string;
+  departureSchedBadge: string;
+  nearbyHaneda: string;
   underwayLabel: string;
   berthedLabel: string;
   openGoogleMaps: string;
@@ -130,6 +152,8 @@ const JA: I18nDict = {
   layerTrains: "電車（JR・京急・相鉄）",
   layerBuses: "ベイサイドブルー（バス）",
   layerBoats: "港の客船・入港予定",
+  layerPlanes: "飛行機（羽田発着・ADS-B）",
+  layerAirCabin: "YOKOHAMA AIR CABIN",
   layerTraffic: "街の車（ズーム時）",
   layerPedestrians: "街の人々",
   layerLabels: "地名ラベル",
@@ -158,7 +182,7 @@ const JA: I18nDict = {
     stale: "鮮度テスト (135s凍結 / >5m消去)",
     "missing-time": "時刻欠損テスト",
     outage: "配信障害テスト",
-    live: "ライブ接続 (/api/snapshot.json)",
+    live: "ライブ接続 (/api/buses)",
   },
   playBtn: "再生中",
   pauseBtn: "停止中",
@@ -198,6 +222,16 @@ const JA: I18nDict = {
     trainType: "列車種別",
     nextStop: "走行区間・次駅",
     cars: "編成",
+    callsign: "便名・コールサイン",
+    aircraft: "機種",
+    registration: "機体記号",
+    altitude: "高度",
+    speed: "対地速度",
+    heading: "方位",
+    verticalRate: "昇降率",
+    ropewaySection: "運行区間",
+    cabinNumber: "ゴンドラ番号",
+    eta: "到着目安",
   },
   vesselKinds: {
     cruise: "大型客船",
@@ -205,6 +239,20 @@ const JA: I18nDict = {
     waterbus: "水上バス",
     tug: "港湾船・タグ",
   },
+  planeKinds: {
+    heavyJet: "大型旅客機",
+    narrowJet: "旅客機",
+    heli: "ヘリコプター",
+  },
+  airCabinName: "YOKOHAMA AIR CABIN",
+  departureBoardTitle: "発車案内",
+  departureDue: "まもなく",
+  departureMin: "分",
+  departureDelayed: "遅れ",
+  departureOvernight: "夜間運休時間帯（始発待ち）",
+  departureLiveBadge: "実測連動",
+  departureSchedBadge: "時刻表",
+  nearbyHaneda: "羽田周辺",
   underwayLabel: "航行中",
   berthedLabel: "着岸中",
   openGoogleMaps: "Google マップで開く ↗",
@@ -259,6 +307,8 @@ const EN: I18nDict = {
   layerTrains: "Trains (JR / Keikyu / Sotetsu)",
   layerBuses: "Buses (Bayside Blue)",
   layerBoats: "Harbor ships & calls",
+  layerPlanes: "Flights (Haneda / ADS-B)",
+  layerAirCabin: "YOKOHAMA AIR CABIN",
   layerTraffic: "Street traffic (zoom in)",
   layerPedestrians: "Pedestrians",
   layerLabels: "Labels",
@@ -287,7 +337,7 @@ const EN: I18nDict = {
     stale: "Stale check (135s / >5m)",
     "missing-time": "Missing timestamp check",
     outage: "Feed outage simulation",
-    live: "Live collector (/api/snapshot.json)",
+    live: "Live ODPT bus feed (/api/buses)",
   },
   playBtn: "Playing",
   pauseBtn: "Paused",
@@ -327,6 +377,16 @@ const EN: I18nDict = {
     trainType: "Service",
     nextStop: "Segment / Next stop",
     cars: "Consist",
+    callsign: "Callsign",
+    aircraft: "Aircraft",
+    registration: "Registration",
+    altitude: "Altitude",
+    speed: "Ground speed",
+    heading: "Heading",
+    verticalRate: "Vertical rate",
+    ropewaySection: "Route",
+    cabinNumber: "Cabin",
+    eta: "Est. arrival",
   },
   vesselKinds: {
     cruise: "Cruise Liner",
@@ -334,6 +394,20 @@ const EN: I18nDict = {
     waterbus: "Water Bus",
     tug: "Harbor Boat",
   },
+  planeKinds: {
+    heavyJet: "Widebody Jet",
+    narrowJet: "Airliner",
+    heli: "Helicopter",
+  },
+  airCabinName: "YOKOHAMA AIR CABIN",
+  departureBoardTitle: "Next Departures",
+  departureDue: "Due",
+  departureMin: "min",
+  departureDelayed: "Delayed",
+  departureOvernight: "Overnight service pause",
+  departureLiveBadge: "Live",
+  departureSchedBadge: "Schedule",
+  nearbyHaneda: "near Haneda",
   underwayLabel: "Underway",
   berthedLabel: "Berthed",
   openGoogleMaps: "Open in Google Maps ↗",

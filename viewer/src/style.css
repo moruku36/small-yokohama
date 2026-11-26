@@ -151,7 +151,9 @@ button {
 
 .bus-pill,
 .boat-pill,
-.train-pill {
+.train-pill,
+.plane-pill,
+.cabin-pill {
   position: absolute;
   left: 0;
   top: 0;
@@ -306,6 +308,91 @@ button {
 .train-pill.active {
   border-color: var(--u-coral);
   box-shadow: 0 0 0 2px var(--u-coral), 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+
+.cabin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 19px;
+  padding: 0 6.5px 0 5.5px;
+  border-radius: 999px;
+  font-family: var(--u-sans);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  white-space: nowrap;
+  color: #f6fbff;
+  background: rgba(18, 92, 126, 0.92);
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.44);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.cabin-pill svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.cabin-pill:hover,
+.cabin-pill.active {
+  border-color: var(--u-coral);
+  box-shadow: 0 0 0 2px var(--u-coral), 0 4px 12px rgba(0, 0, 0, 0.52);
+}
+
+.plane-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 19px;
+  padding: 0 6.5px 0 5.5px;
+  border-radius: 999px;
+  font-family: var(--u-sans);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  color: #f8fbff;
+  background: rgba(24, 42, 68, 0.92);
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.plane-pill svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.plane-pill .pp-alt {
+  font-weight: 500;
+  font-size: 9.5px;
+  opacity: 0.84;
+  font-variant-numeric: tabular-nums;
+}
+
+.plane-pill.is-live::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #42d982;
+  margin-left: 1px;
+}
+
+.plane-pill.pm-heli {
+  background: rgba(154, 44, 34, 0.92);
+}
+
+.plane-pill:hover,
+.plane-pill.active {
+  border-color: var(--u-coral);
+  box-shadow: 0 0 0 2px var(--u-coral), 0 4px 12px rgba(0, 0, 0, 0.54);
 }
 
 .label-layer {
@@ -930,6 +1017,133 @@ html[data-theme="dark"] .results button:hover {
   font-family: var(--font-mono);
   font-size: 11.5px;
   word-break: break-word;
+}
+
+/* Live Station Departure Board inside #card */
+.dep-board {
+  margin-top: 11px;
+  padding: 9px 10px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--u-line);
+  background: rgba(255, 255, 255, 0.36);
+}
+
+html[data-theme="dark"] .dep-board {
+  background: rgba(20, 22, 26, 0.34);
+}
+
+.dep-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-family: var(--u-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--u-soft);
+}
+
+.dep-mode {
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  background: rgba(130, 120, 105, 0.14);
+  color: var(--u-mute);
+}
+
+.dep-mode.live {
+  background: rgba(46, 125, 79, 0.16);
+  color: var(--ok);
+}
+
+.dep-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.dep-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--u-sans);
+  font-size: 11.5px;
+  line-height: 1.25;
+}
+
+.dep-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.dep-mid {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dep-dest {
+  color: var(--u-ink);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dep-type {
+  font-size: 10px;
+  color: var(--u-mute);
+}
+
+.dep-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.dep-delay {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(179, 38, 30, 0.14);
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dep-eta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--u-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dep-eta.due {
+  color: var(--u-coral);
+  font-weight: 700;
+}
+
+.dep-empty {
+  margin: 2px 0 0;
+  font-family: var(--u-sans);
+  font-size: 11.5px;
+  color: var(--u-mute);
 }
 
 .gmaps-link {
