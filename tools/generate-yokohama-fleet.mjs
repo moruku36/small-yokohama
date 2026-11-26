@@ -1663,7 +1663,7 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
     ) {
       return false;
     }
-    const cell = `${Math.floor(img.px / 14)}:${Math.floor(img.py / 14)}`;
+    const cell = `${Math.floor(img.px / 10)}:${Math.floor(img.py / 10)}`;
     if (grid.has(cell)) return false;
 
     if (depthTiles.hasForbiddenSurfaceNearby(img.px, img.py, allowDeck)) {
@@ -1699,26 +1699,26 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
 
   // 1. Vibrant Yokohama pedestrian plazas, decks & parks (strictly checked against roads & buildings)
   const hotspots = [
-    { lon: 139.6429, lat: 35.4526, radLon: 0.0009, radLat: 0.00065, elevM: 2.2, n: 120, allowDeck: false }, // Red Brick Courtyard
-    { lon: 139.6478, lat: 35.4517, radLon: 0.0006, radLat: 0.00045, elevM: 6.5, n: 85, allowDeck: true },  // Osanbashi Deck
-    { lon: 139.6496, lat: 35.4465, radLon: 0.0018, radLat: 0.0008, elevM: 2.2, n: 140, allowDeck: false },  // Yamashita Park
-    { lon: 139.6435, lat: 35.4553, radLon: 0.0007, radLat: 0.0005, elevM: 2.5, n: 70, allowDeck: false },   // Hammerhead Terrace
-    { lon: 139.6448, lat: 35.4501, radLon: 0.0007, radLat: 0.0005, elevM: 2.2, n: 65, allowDeck: false },   // Zou-no-Hana Park
-    { lon: 139.6316, lat: 35.4548, radLon: 0.0010, radLat: 0.0007, elevM: 2.4, n: 100, allowDeck: false },  // Nippon Maru / Landmark Plaza
-    { lon: 139.6336, lat: 35.4566, radLon: 0.0009, radLat: 0.0007, elevM: 2.4, n: 85, allowDeck: false },   // Queen's Square / MARK IS
-    { lon: 139.6371, lat: 35.4596, radLon: 0.0012, radLat: 0.0009, elevM: 2.2, n: 95, allowDeck: false },   // Rinko Park
-    { lon: 139.6458, lat: 35.4429, radLon: 0.0012, radLat: 0.0008, elevM: 2.2, n: 100, allowDeck: false },  // Chinatown
-    { lon: 139.6401, lat: 35.4434, radLon: 0.0010, radLat: 0.0008, elevM: 2.2, n: 85, allowDeck: false },   // Yokohama Park
-    { lon: 139.6226, lat: 35.4658, radLon: 0.0012, radLat: 0.0009, elevM: 2.4, n: 105, allowDeck: false },  // Yokohama Sta.
-    { lon: 139.6312, lat: 35.4512, radLon: 0.0008, radLat: 0.0006, elevM: 2.4, n: 80, allowDeck: false },   // Sakuragicho Sta.
-    { lon: 139.6266, lat: 35.4666, radLon: 0.0007, radLat: 0.0005, elevM: 2.8, n: 60, allowDeck: false },   // Bay Quarter
-    { lon: 139.6275, lat: 35.4608, radLon: 0.0012, radLat: 0.0009, elevM: 2.2, n: 80, allowDeck: false },   // Takashima Central Park
+    { lon: 139.6429, lat: 35.4526, radLon: 0.0009, radLat: 0.00065, elevM: 2.2, n: 320, allowDeck: false }, // Red Brick Courtyard
+    { lon: 139.6478, lat: 35.4517, radLon: 0.0006, radLat: 0.00045, elevM: 6.5, n: 220, allowDeck: true },  // Osanbashi Deck
+    { lon: 139.6496, lat: 35.4465, radLon: 0.0018, radLat: 0.0008, elevM: 2.2, n: 360, allowDeck: false },  // Yamashita Park
+    { lon: 139.6435, lat: 35.4553, radLon: 0.0007, radLat: 0.0005, elevM: 2.5, n: 180, allowDeck: false },   // Hammerhead Terrace
+    { lon: 139.6448, lat: 35.4501, radLon: 0.0007, radLat: 0.0005, elevM: 2.2, n: 160, allowDeck: false },   // Zou-no-Hana Park
+    { lon: 139.6316, lat: 35.4548, radLon: 0.0010, radLat: 0.0007, elevM: 2.4, n: 280, allowDeck: false },  // Nippon Maru / Landmark Plaza
+    { lon: 139.6336, lat: 35.4566, radLon: 0.0009, radLat: 0.0007, elevM: 2.4, n: 230, allowDeck: false },   // Queen's Square / MARK IS
+    { lon: 139.6371, lat: 35.4596, radLon: 0.0012, radLat: 0.0009, elevM: 2.2, n: 240, allowDeck: false },   // Rinko Park
+    { lon: 139.6458, lat: 35.4429, radLon: 0.0012, radLat: 0.0008, elevM: 2.2, n: 300, allowDeck: false },  // Chinatown
+    { lon: 139.6401, lat: 35.4434, radLon: 0.0010, radLat: 0.0008, elevM: 2.2, n: 220, allowDeck: false },   // Yokohama Park
+    { lon: 139.6226, lat: 35.4658, radLon: 0.0012, radLat: 0.0009, elevM: 2.4, n: 320, allowDeck: false },  // Yokohama Sta.
+    { lon: 139.6312, lat: 35.4512, radLon: 0.0008, radLat: 0.0006, elevM: 2.4, n: 220, allowDeck: false },   // Sakuragicho Sta.
+    { lon: 139.6266, lat: 35.4666, radLon: 0.0007, radLat: 0.0005, elevM: 2.8, n: 150, allowDeck: false },   // Bay Quarter
+    { lon: 139.6275, lat: 35.4608, radLon: 0.0012, radLat: 0.0009, elevM: 2.2, n: 200, allowDeck: false },   // Takashima Central Park
   ];
 
   for (const h of hotspots) {
     let placed = 0;
     // dense districts reject most random spots (they land on buildings): keep trying for open ground
-    for (let attempt = 0; attempt < h.n * 24 && placed < h.n; attempt++) {
+    for (let attempt = 0; attempt < h.n * 32 && placed < h.n; attempt++) {
       const a = rng() * Math.PI * 2;
       const r = Math.sqrt(rng());
       const lon = h.lon + Math.cos(a) * h.radLon * r;
@@ -1753,13 +1753,13 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
   for (const w of osm.roadWays) {
     if (!sidewalkRoads.has(w.highway) || w.bridge === "yes") continue;
     for (let i = 0; i < w.nodes.length - 1; i++) {
-      if (points.length / 4 >= 2650) break;
+      if (points.length / 4 >= 6000) break;
       const ca = osm.nodes[String(w.nodes[i])];
       const cb = osm.nodes[String(w.nodes[i + 1])];
       if (!ca || !cb) continue;
       const d = distMeters(cam, ca, cb);
       if (d < 8) continue;
-      const count = Math.max(1, Math.floor(d / 20));
+      const count = Math.max(1, Math.floor(d / 14));
       const la = wgs84ToLocal(cam, ca[0], ca[1], 0);
       const lb = wgs84ToLocal(cam, cb[0], cb[1], 0);
       const tx = (lb[0] - la[0]) / d;
@@ -1768,7 +1768,7 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
       const ny = tx;
 
       for (let k = 0; k < count; k++) {
-        if (rng() > 0.78 || points.length / 4 >= 2650) continue;
+        if (rng() > 0.85 || points.length / 4 >= 6000) continue;
         const t = (k + 0.5) / count;
         let side = (rng() < 0.5 ? 1 : -1) * sidewalkOffsetFor(w.highway);
         let lon = ca[0] + (cb[0] - ca[0]) * t + nx * side * offLonPerM;
