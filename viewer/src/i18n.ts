@@ -144,6 +144,9 @@ export interface I18nDict {
   followLabel: string;
   followingLabel: string;
   loadingCity: string;
+  mapLoadError: string;
+  retryMap: string;
+  overlayUnavailable: string;
 }
 
 const JA: I18nDict = {
@@ -313,6 +316,9 @@ const JA: I18nDict = {
   followLabel: "追いかける",
   followingLabel: "追跡中 · 地図を動かすと解除",
   loadingCity: "街を読み込んでいます…",
+  mapLoadError: "地図を読み込めませんでした。",
+  retryMap: "地図を再試行",
+  overlayUnavailable: "WebGL2 を利用できないため、一部の地図レイヤーと演出は表示されません。",
 };
 
 const EN: I18nDict = {
@@ -482,6 +488,9 @@ const EN: I18nDict = {
   followLabel: "Follow",
   followingLabel: "Following · drag the map to stop",
   loadingCity: "Loading the city…",
+  mapLoadError: "The map could not be loaded.",
+  retryMap: "Retry map",
+  overlayUnavailable: "WebGL2 is unavailable. Some map layers and effects are not shown.",
 };
 
 export function getDict(lang: Lang): I18nDict {

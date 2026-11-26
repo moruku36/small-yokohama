@@ -20,9 +20,11 @@
     "build": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run build",
     "preview": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run preview",
     "typecheck": "npm.cmd --workspace @small-yokohama/core run typecheck && npm.cmd --workspace @small-yokohama/pilot-builder run typecheck && npm.cmd --workspace @small-yokohama/viewer run typecheck",
-    "test": "npx.cmd vitest run"
+    "test": "npx.cmd vitest run",
+    "test:startup": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/node": "^22.15.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

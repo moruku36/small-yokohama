@@ -285,6 +285,13 @@ npm.cmd run dev
 npm.cmd run build:vercel
 ```
 
+Run the map startup regression tests in an isolated Chromium browser. The test server uses local release assets (building the pilot if needed), and the tests stub the live APIs.
+
+```powershell
+npx.cmd playwright install chromium
+npm.cmd run test:startup
+```
+
 ---
 
 ## Credits & License

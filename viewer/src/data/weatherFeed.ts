@@ -28,6 +28,20 @@ export interface ResolvedWeatherState {
 
 const DIRECT_OPEN_METEO_URL =
   "https://api.open-meteo.com/v1/forecast?latitude=35.4437&longitude=139.6380&current=temperature_2m,weather_code,precipitation,rain,showers,wind_speed_10m,cloud_cover&timezone=Asia%2FTokyo";
+const WEATHER_REQUEST_TIMEOUT_MS = 5_000;
+
+async function fetchWeatherJson<T>(url: string): Promise<T | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WEATHER_REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    return res.ok ? ((await res.json()) as T) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
@@ -77,49 +91,36 @@ function classifyFallbackWmo(
 }
 
 export async function fetchYokohamaWeather(): Promise<LiveWeatherPayload | null> {
-  try {
-    const res = await fetch("/api/weather", { cache: "no-store" });
-    if (res.ok) {
-      const json = (await res.json()) as LiveWeatherPayload;
-      if (json && typeof json.weatherCode === "number") {
-        return json;
-      }
-    }
-  } catch {
-    // ignore and try direct Open-Meteo fallback below (e.g. local Vite dev)
-  }
+  const payload = await fetchWeatherJson<LiveWeatherPayload>("/api/weather");
+  if (payload && typeof payload.weatherCode === "number") return payload;
 
-  try {
-    const res = await fetch(DIRECT_OPEN_METEO_URL, { cache: "no-store" });
-    if (!res.ok) return null;
-    const raw = (await res.json()) as {
-      current?: {
-        temperature_2m?: number;
-        weather_code?: number;
-        precipitation?: number;
-        wind_speed_10m?: number;
-        cloud_cover?: number;
-      };
+  // Fall back to Open-Meteo directly (e.g. local Vite dev).
+  const raw = await fetchWeatherJson<{
+    current?: {
+      temperature_2m?: number;
+      weather_code?: number;
+      precipitation?: number;
+      wind_speed_10m?: number;
+      cloud_cover?: number;
     };
-    const cur = raw.current ?? {};
-    const tempC = typeof cur.temperature_2m === "number" ? cur.temperature_2m : null;
-    const weatherCode = typeof cur.weather_code === "number" ? cur.weather_code : 0;
-    const precipitationMm = typeof cur.precipitation === "number" ? cur.precipitation : 0;
-    const windSpeedKmh = typeof cur.wind_speed_10m === "number" ? cur.wind_speed_10m : 0;
-    const cloudCover = typeof cur.cloud_cover === "number" ? cur.cloud_cover : 0;
-    return {
-      ok: true,
-      fetchedAt: new Date().toISOString(),
-      tempC,
-      weatherCode,
-      precipitationMm,
-      windSpeedKmh,
-      cloudCover,
-      ...classifyFallbackWmo(weatherCode, precipitationMm, windSpeedKmh),
-    };
-  } catch {
-    return null;
-  }
+  }>(DIRECT_OPEN_METEO_URL);
+  if (!raw) return null;
+  const cur = raw.current ?? {};
+  const tempC = typeof cur.temperature_2m === "number" ? cur.temperature_2m : null;
+  const weatherCode = typeof cur.weather_code === "number" ? cur.weather_code : 0;
+  const precipitationMm = typeof cur.precipitation === "number" ? cur.precipitation : 0;
+  const windSpeedKmh = typeof cur.wind_speed_10m === "number" ? cur.wind_speed_10m : 0;
+  const cloudCover = typeof cur.cloud_cover === "number" ? cur.cloud_cover : 0;
+  return {
+    ok: true,
+    fetchedAt: new Date().toISOString(),
+    tempC,
+    weatherCode,
+    precipitationMm,
+    windSpeedKmh,
+    cloudCover,
+    ...classifyFallbackWmo(weatherCode, precipitationMm, windSpeedKmh),
+  };
 }
 
 export function resolveWeatherState(

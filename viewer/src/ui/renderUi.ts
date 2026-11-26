@@ -94,6 +94,7 @@ export function renderBar(
   el: HTMLElement,
   state: ViewerState,
   handlers: UiHandlers,
+  hasWebGLOverlay: boolean,
 ): void {
   const d = getDict(state.lang);
 
@@ -104,7 +105,7 @@ export function renderBar(
       <button type="button" id="btn-tab-places" aria-expanded="${state.activeTab === "places"}">${escapeHtml(d.navPlaces)}</button>
       <button type="button" id="btn-tab-layers" aria-expanded="${state.activeTab === "layers"}">${escapeHtml(d.navLayers)}</button>
       <button type="button" id="btn-tv" class="${state.tvMode ? "active" : ""}" aria-pressed="${state.tvMode}">${escapeHtml(d.navTv)}</button>
-      <button type="button" id="btn-ride" class="${state.selected?.kind === "ridealong" ? "active" : ""}" aria-pressed="${state.selected?.kind === "ridealong"}">${escapeHtml(d.navRide)}</button>
+      <button type="button" id="btn-ride" class="${state.selected?.kind === "ridealong" ? "active" : ""}" aria-pressed="${state.selected?.kind === "ridealong"}" ${hasWebGLOverlay ? "" : `disabled title="${escapeHtml(d.overlayUnavailable)}"`}>${escapeHtml(d.navRide)}</button>
       <button type="button" id="btn-share">${escapeHtml(d.navShare)}</button>
       <button type="button" id="btn-about" aria-expanded="${state.aboutOpen}">${escapeHtml(d.navAbout)}</button>
       <button type="button" id="btn-lang">${escapeHtml(d.navLang)}</button>
@@ -425,6 +426,7 @@ export function renderDrop(
   bundle: LoadedReleaseBundle,
   feed: ResolvedFeedState | null,
   handlers: UiHandlers,
+  hasWebGLOverlay: boolean,
   trains: readonly ResolvedTrain[] = [],
   planes: readonly ResolvedPlane[] = [],
   airCabins: readonly ResolvedAirCabinGondola[] = [],
@@ -525,15 +527,20 @@ export function renderDrop(
     { label: d.skyPresets.live, value: presets.live },
   ];
 
-  const debugToggle = (key: BooleanOptionKey, label: string, checked: boolean) => `
+  const overlayDisabled = hasWebGLOverlay ? "" : "disabled";
+  const debugToggle = (key: BooleanOptionKey, label: string, checked: boolean) => {
+    const enabled = key === "reducedMotion" || hasWebGLOverlay;
+    return `
     <label class="debug-row">
       <span>${escapeHtml(label)}</span>
-      <input type="checkbox" data-opt="${key}" ${checked ? "checked" : ""} />
+      <input type="checkbox" data-opt="${key}" ${checked && enabled ? "checked" : ""} ${enabled ? "" : "disabled"} />
     </label>
-  `;
+    `;
+  };
 
   el.innerHTML = `
     <div class="layers">
+      ${hasWebGLOverlay ? "" : `<p class="layers-notice">${escapeHtml(d.overlayUnavailable)}</p>`}
       <button type="button" class="layer-btn" data-toggle="showTrains" aria-pressed="${state.showTrains}">
         <span>${escapeHtml(d.layerTrains)}</span>
         <small>${escapeHtml(trainLabel)}</small>
@@ -554,15 +561,15 @@ export function renderDrop(
         <span>${escapeHtml(d.layerPlanes)}</span>
         <small>${escapeHtml(planeLabel)}</small>
       </button>
-      <button type="button" class="layer-btn" data-toggle="showCosmoClock" aria-pressed="${state.showCosmoClock}">
+      <button type="button" class="layer-btn" data-toggle="showCosmoClock" aria-pressed="${hasWebGLOverlay && state.showCosmoClock}" ${overlayDisabled}>
         <span>${escapeHtml(d.layerCosmoClock)}</span>
         <small>${escapeHtml(cosmoLabel)}</small>
       </button>
-      <button type="button" class="layer-btn" data-toggle="showTraffic" aria-pressed="${state.showTraffic}">
+      <button type="button" class="layer-btn" data-toggle="showTraffic" aria-pressed="${hasWebGLOverlay && state.showTraffic}" ${overlayDisabled}>
         <span>${escapeHtml(d.layerTraffic)}</span>
         <small>OSM</small>
       </button>
-      <button type="button" class="layer-btn" data-toggle="showPedestrians" aria-pressed="${state.showPedestrians}">
+      <button type="button" class="layer-btn" data-toggle="showPedestrians" aria-pressed="${hasWebGLOverlay && state.showPedestrians}" ${overlayDisabled}>
         <span>${escapeHtml(d.layerPedestrians)}</span>
         <small>${state.lang === "en" ? "Sidewalks" : "街並み"}</small>
       </button>
