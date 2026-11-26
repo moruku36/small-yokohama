@@ -12,6 +12,7 @@ import {
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
 import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
+import { resolveCosmoClockState } from "../data/cosmoClock.js";
 import type { ResolvedPlane } from "../data/planeFeed.js";
 import {
   pickFeatureIdAtImagePx,
@@ -20,8 +21,11 @@ import {
   type LoadedReleaseBundle,
 } from "../data/releaseLoader.js";
 import {
+  resolveRideAlongCar,
   sampleVisibleAmbientCars,
+  type AmbientCarInstance,
   type AmbientTrafficBundle,
+  type ResolvedRideAlongCar,
 } from "../data/trafficFeed.js";
 import type { ResolvedTrain } from "../data/trainFeed.js";
 import type {
@@ -53,6 +57,7 @@ export type MapPick =
   | { kind: "train"; train: ResolvedTrain }
   | { kind: "plane"; plane: ResolvedPlane }
   | { kind: "aircabin"; cabin: ResolvedAirCabinGondola }
+  | { kind: "ridealong"; car: ResolvedRideAlongCar }
   | { kind: "portcall"; portCall: AnimatedPortCall }
   | { kind: "landmark"; landmark: Landmark }
   | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number };
@@ -62,6 +67,7 @@ export interface MapViewerCallbacks {
   onSelectTrain: (tr: ResolvedTrain) => void;
   onSelectPlane?: (plane: ResolvedPlane) => void;
   onSelectAirCabin?: (cabin: ResolvedAirCabinGondola) => void;
+  onSelectRideAlong?: (car: ResolvedRideAlongCar) => void;
   onSelectLandmark: (lm: Landmark) => void;
   onSelectFeature: (feat: SceneFeatureRecord, lon: number, lat: number) => void;
   onSelectPortCall: (pc: AnimatedPortCall) => void;
@@ -92,9 +98,20 @@ export class MapViewer {
   private planesState: readonly ResolvedPlane[] = [];
   private airCabinsState: readonly ResolvedAirCabinGondola[] = [];
   private trafficBundle: AmbientTrafficBundle | null = null;
-  private weatherVisual: { rainIntensity: number; windSlope: number } = {
+  private lastVisibleCars: AmbientCarInstance[] = [];
+  private lastHourJst = 12;
+  private weatherVisual: {
+    rainIntensity: number;
+    windSlope: number;
+    cloudCover: number;
+    mistIntensity: number;
+    windSpeedKmh: number;
+  } = {
     rainIntensity: 0,
     windSlope: 0.08,
+    cloudCover: 0.2,
+    mistIntensity: 0,
+    windSpeedKmh: 10,
   };
   private resizeObserver: ResizeObserver;
   private cleanupInput: () => void = () => {};
@@ -215,9 +232,18 @@ export class MapViewer {
     this.renderOverlayFrame(false, false);
   }
 
-  setWeatherVisual(rainIntensity: number, windSlope: number): void {
-    const changed = Math.abs(this.weatherVisual.rainIntensity - rainIntensity) > 0.02;
-    this.weatherVisual = { rainIntensity, windSlope };
+  setWeatherVisual(
+    rainIntensity: number,
+    windSlope: number,
+    cloudCover = 0.25,
+    mistIntensity = 0,
+    windSpeedKmh = 10,
+  ): void {
+    const changed =
+      Math.abs(this.weatherVisual.rainIntensity - rainIntensity) > 0.02 ||
+      Math.abs(this.weatherVisual.cloudCover - cloudCover) > 0.04 ||
+      Math.abs(this.weatherVisual.mistIntensity - mistIntensity) > 0.02;
+    this.weatherVisual = { rainIntensity, windSlope, cloudCover, mistIntensity, windSpeedKmh };
     if (changed) {
       this.renderOverlayFrame(false, true);
     }
@@ -1134,6 +1160,7 @@ export class MapViewer {
 
   renderOverlayFrame(immediateSky = false, updateSky = true): void {
     if (this.isDestroyed) return;
+    const sunDate = getSunDateForHourJst(this.state.sunHourJst);
     const { altitudeDeg, grade } = this.computeCurrentSky();
     if (updateSky || immediateSky) {
       this.applySkyFilter(altitudeDeg, grade, immediateSky);
@@ -1150,6 +1177,8 @@ export class MapViewer {
       this.state.selected?.kind === "plane" ? this.state.selected.plane.id : null;
     const selectedAirCabinId =
       this.state.selected?.kind === "aircabin" ? this.state.selected.cabin.id : null;
+    const selectedRideCarId =
+      this.state.selected?.kind === "ridealong" ? this.state.selected.car.carId : null;
     const selectedPortCallId =
       this.state.selected?.kind === "portcall" ? this.state.selected.portCall.id : null;
 
@@ -1165,12 +1194,13 @@ export class MapViewer {
       this.state.sunHourJst !== null
         ? this.state.sunHourJst
         : (() => {
-            const d = getSunDateForHourJst(null);
-            const jst = new Date(d.getTime() + 9 * 3600_000);
+            const jst = new Date(sunDate.getTime() + 9 * 3600_000);
             return jst.getUTCHours() + jst.getUTCMinutes() / 60;
           })();
+    this.lastHourJst = hourJst;
     const ambientCars =
-      carAlpha > 0.01 && this.trafficBundle
+      (carAlpha > 0.01 || (this.state.showTraffic && selectedRideCarId !== null)) &&
+      this.trafficBundle
         ? sampleVisibleAmbientCars(
             this.trafficBundle,
             bounds.topLeft,
@@ -1179,8 +1209,16 @@ export class MapViewer {
             this.camera,
             420,
             hourJst,
+            selectedRideCarId,
           )
         : [];
+    this.lastVisibleCars = ambientCars;
+
+    const cosmoClock = resolveCosmoClockState(
+      sunDate,
+      this.state.simTimeSec,
+      this.state.reducedMotion,
+    );
 
     this.glOverlay.render({
       viewTopLeftImgPx: bounds.topLeft,
@@ -1207,11 +1245,16 @@ export class MapViewer {
       pedAlpha,
       rainIntensity: this.weatherVisual.rainIntensity,
       windSlope: this.weatherVisual.windSlope,
+      sunAltitudeDeg: altitudeDeg,
+      cloudCover: this.weatherVisual.cloudCover,
+      mistIntensity: this.weatherVisual.mistIntensity,
+      windSpeedKmh: this.weatherVisual.windSpeedKmh,
       reducedMotion: this.state.reducedMotion,
       selectedVehicleId,
       selectedTrainId,
       selectedPlaneId,
       selectedAirCabinId,
+      selectedRideCarId,
       selectedPortCallId,
       gcps: this.bundle.gcps,
       deckTestPoint: this.bundle.deckTestPoint,
@@ -1219,6 +1262,8 @@ export class MapViewer {
       planes: this.state.showPlanes ? this.planesState : [],
       airCabins: this.state.showAirCabin ? this.airCabinsState : [],
       showAirCabin: this.state.showAirCabin,
+      cosmoClock,
+      showCosmoClock: this.state.showCosmoClock,
     });
   }
 
@@ -1240,6 +1285,9 @@ export class MapViewer {
         return;
       case "aircabin":
         this.callbacks.onSelectAirCabin?.(pick.cabin);
+        return;
+      case "ridealong":
+        this.callbacks.onSelectRideAlong?.(pick.car);
         return;
       case "portcall":
         this.callbacks.onSelectPortCall(pick.portCall);
@@ -1319,6 +1367,35 @@ export class MapViewer {
           );
           if (Math.hypot(viewerPos.x - cScreen.x, viewerPos.y - cScreen.y) <= 24) {
             return { kind: "train", train: tr };
+          }
+        }
+      }
+    }
+
+    // 1c. Check autonomous sensor-pod cars on streets when zoomed in for Ride Along
+    if (this.state.showTraffic && this.trafficBundle && this.lastVisibleCars.length > 0) {
+      const bounds = this.getViewportImageBounds();
+      const imgPxPerCssPx = bounds
+        ? (bounds.bottomRight.x - bounds.topLeft.x) / Math.max(1, bounds.cssWidth)
+        : 10;
+      if (imgPxPerCssPx < 4.5) {
+        for (const ac of this.lastVisibleCars) {
+          if (ac.kind !== 4) continue;
+          const acImg = localToImage(
+            this.camera,
+            wgs84ToLocal(this.camera, ac.lon, ac.lat, ac.elevM + 1.0),
+          );
+          const acScreen = this.osd.viewport.imageToViewerElementCoordinates(
+            new OpenSeadragon.Point(acImg.px, acImg.py),
+          );
+          if (Math.hypot(viewerPos.x - acScreen.x, viewerPos.y - acScreen.y) <= 22) {
+            const car = resolveRideAlongCar(
+              this.trafficBundle,
+              ac.carId,
+              this.state.simTimeSec,
+              this.lastHourJst,
+            );
+            if (car) return { kind: "ridealong", car };
           }
         }
       }

@@ -21,7 +21,12 @@ import {
   type LoadedReleaseBundle,
 } from "./data/releaseLoader.js";
 import { isStationSelection } from "./data/stationDepartures.js";
-import { loadAmbientFixtures } from "./data/trafficFeed.js";
+import {
+  loadAmbientFixtures,
+  pickRideAlongCarId,
+  resolveRideAlongCar,
+  type ResolvedRideAlongCar,
+} from "./data/trafficFeed.js";
 import {
   fetchLiveTrainsApi,
   loadRailBundle,
@@ -70,7 +75,7 @@ import {
 } from "./ui/renderUi.js";
 import { CloudIntro } from "./viewer/CloudIntro.js";
 import { MapViewer } from "./viewer/MapViewer.js";
-import { zoomToMetersAcross } from "./viewer/geoView.js";
+import { metersAcrossToZoom, zoomToMetersAcross } from "./viewer/geoView.js";
 import {
   SKY_PRESETS,
   getSunDateForHourJst,
@@ -200,6 +205,13 @@ async function bootstrap(): Promise<void> {
     state.simTimeSec,
     sessionStartDate,
   );
+  let activeRideCar: ResolvedRideAlongCar | null = null;
+
+  const currentHourJst = () => {
+    if (state.sunHourJst !== null) return state.sunHourJst;
+    const jst = new Date(Date.now() + 9 * 3600_000);
+    return jst.getUTCHours() + jst.getUTCMinutes() / 60;
+  };
 
   const soundscape = new Soundscape();
   const hoverTip = new HoverTip();
@@ -266,6 +278,38 @@ async function bootstrap(): Promise<void> {
     refreshUi();
   };
 
+  const selectRideAlong = (car: ResolvedRideAlongCar, zoomToStreet = false) => {
+    stopTv(false);
+    state.showTraffic = true;
+    activeRideCar = car;
+    state.following = true;
+    state.selected = { kind: "ridealong", car };
+    state.activeTab = null;
+    if (zoomToStreet) {
+      mapViewer.panToLonLat(
+        car.lon,
+        car.lat,
+        car.elevM + 1.5,
+        metersAcrossToZoom(bundle.camera, 210),
+      );
+    }
+    mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
+    refreshUi();
+  };
+
+  const startRideAlong = (excludeCarId?: number | null) => {
+    if (!ambient.traffic) return;
+    const pickedId = pickRideAlongCarId(
+      ambient.traffic,
+      state.simTimeSec,
+      currentHourJst(),
+      excludeCarId,
+    );
+    if (pickedId === null) return;
+    const car = resolveRideAlongCar(ambient.traffic, pickedId, state.simTimeSec, currentHourJst());
+    if (car) selectRideAlong(car, true);
+  };
+
   const syncTransitBadges = () => {
     if (!mapViewer) return;
     const bounds = mapViewer.getViewportInfo();
@@ -299,6 +343,7 @@ async function bootstrap(): Promise<void> {
       resolvedTrains,
       resolvedPlanes,
       resolvedAirCabins,
+      activeRideCar,
     );
     transitLayer.render(
       transitLayerEl,
@@ -347,7 +392,13 @@ async function bootstrap(): Promise<void> {
     );
     const wState = resolveCurrentWeather();
     renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
-    mapViewer?.setWeatherVisual(wState.rainIntensity, wState.windSlope);
+    mapViewer?.setWeatherVisual(
+      wState.rainIntensity,
+      wState.windSlope,
+      wState.cloudCover,
+      wState.mistIntensity,
+      wState.windSpeedKmh,
+    );
     renderSq(sqEl, state, handlers);
     renderCreditAndAboutModal(creditEl, aboutModalEl, state, bundle, handlers);
     syncViewportOverlays();
@@ -447,6 +498,10 @@ async function bootstrap(): Promise<void> {
       const c = resolvedAirCabins.find((x) => x.id === sel.cabin.id);
       return c ? { lon: c.lon, lat: c.lat, elevM: c.cableElevM - 2.2 } : null;
     }
+    if (sel.kind === "ridealong") {
+      const car = activeRideCar && activeRideCar.carId === sel.car.carId ? activeRideCar : sel.car;
+      return { lon: car.lon, lat: car.lat, elevM: car.elevM + 1.5 };
+    }
     return null;
   };
 
@@ -476,8 +531,10 @@ async function bootstrap(): Promise<void> {
       0,
       Math.min(1, (Math.log(8000) - Math.log(metersAcross)) / (Math.log(8000) - Math.log(150))),
     );
+    const wCur = resolveCurrentWeather();
     soundscape.update({
-      rainIntensity: resolveCurrentWeather().rainIntensity,
+      rainIntensity: wCur.rainIntensity,
+      mistIntensity: wCur.mistIntensity,
       sunAltitudeDeg: computeYokohamaSun(getSunDateForHourJst(state.sunHourJst)).altitudeDeg,
       shipCount: state.showBoats ? resolvedFeed.portCalls.length : 0,
       closeness,
@@ -507,6 +564,14 @@ async function bootstrap(): Promise<void> {
       state.aboutOpen = false;
       advanceTvStop();
       tvTimerId = window.setInterval(advanceTvStop, 7500);
+    },
+    onStartRideAlong: () => {
+      const curId = state.selected?.kind === "ridealong" ? state.selected.car.carId : null;
+      startRideAlong(curId);
+    },
+    onSwitchRideAlong: () => {
+      const curId = state.selected?.kind === "ridealong" ? state.selected.car.carId : null;
+      startRideAlong(curId);
     },
     onShare: async (anchorEl?: HTMLElement | null) => {
       const url = serializeShareUrl(state, window.location.href, bundle.camera);
@@ -600,7 +665,13 @@ async function bootstrap(): Promise<void> {
     onChangeWeatherMode: (mode: WeatherMode) => {
       state.weatherMode = mode;
       const wState = resolveCurrentWeather();
-      mapViewer.setWeatherVisual(wState.rainIntensity, wState.windSlope);
+      mapViewer.setWeatherVisual(
+        wState.rainIntensity,
+        wState.windSlope,
+        wState.cloudCover,
+        wState.mistIntensity,
+        wState.windSpeedKmh,
+      );
       mapViewer.renderOverlayFrame(false, true);
       refreshUi();
     },
@@ -689,6 +760,7 @@ async function bootstrap(): Promise<void> {
     onSelectAirCabin: selectAirCabin,
     onClearSelection: () => {
       stopTv(false);
+      activeRideCar = null;
       state.following = false;
       state.selected = null;
       mapViewer.updateState(state, resolvedFeed, resolvedTrains);
@@ -701,6 +773,7 @@ async function bootstrap(): Promise<void> {
     onSelectTrain: selectTrain,
     onSelectPlane: selectPlane,
     onSelectAirCabin: selectAirCabin,
+    onSelectRideAlong: (car) => selectRideAlong(car, false),
     onSelectLandmark: (lm) => {
       stopTv(false);
       state.following = false;
@@ -764,7 +837,13 @@ async function bootstrap(): Promise<void> {
     mapViewer.setAmbientTraffic(ambient.traffic);
   }
   const initWeather = resolveCurrentWeather();
-  mapViewer.setWeatherVisual(initWeather.rainIntensity, initWeather.windSlope);
+  mapViewer.setWeatherVisual(
+    initWeather.rainIntensity,
+    initWeather.windSlope,
+    initWeather.cloudCover,
+    initWeather.mistIntensity,
+    initWeather.windSpeedKmh,
+  );
 
   if (minimapEl) {
     minimap = new Minimap(minimapEl, bundle, (imgX, imgY, imm) => {
@@ -922,7 +1001,13 @@ async function bootstrap(): Promise<void> {
       if (w) {
         currentWeatherPayload = w;
         const wState = resolveCurrentWeather();
-        mapViewer.setWeatherVisual(wState.rainIntensity, wState.windSlope);
+        mapViewer.setWeatherVisual(
+          wState.rainIntensity,
+          wState.windSlope,
+          wState.cloudCover,
+          wState.mistIntensity,
+          wState.windSpeedKmh,
+        );
         renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
       }
     });
@@ -980,7 +1065,10 @@ async function bootstrap(): Promise<void> {
     }
 
     const wState = resolveCurrentWeather();
-    if ((state.playing || wState.rainIntensity > 0.05) && !state.reducedMotion) {
+    if (
+      (state.playing || wState.rainIntensity > 0.05 || wState.mistIntensity > 0.05) &&
+      !state.reducedMotion
+    ) {
       state.simTimeSec += dtSec;
       if (state.playing) {
         resolvedFeed = resolveVehiclesForFrame(
@@ -998,6 +1086,17 @@ async function bootstrap(): Promise<void> {
         );
         resolvedPlanes = resolvePlanesForFrame(livePlanesApi, state.simTimeSec);
         resolvedAirCabins = resolveAirCabinForFrame(state.simTimeSec, sessionStartDate);
+        if (state.selected?.kind === "ridealong" && ambient.traffic) {
+          activeRideCar = resolveRideAlongCar(
+            ambient.traffic,
+            state.selected.car.carId,
+            state.simTimeSec,
+            currentHourJst(),
+          );
+          if (activeRideCar) {
+            state.selected = { kind: "ridealong", car: activeRideCar };
+          }
+        }
       }
       mapViewer.updateState(
         state,
@@ -1018,7 +1117,8 @@ async function bootstrap(): Promise<void> {
           state.selected?.kind === "portcall" ||
           state.selected?.kind === "train" ||
           state.selected?.kind === "plane" ||
-          state.selected?.kind === "aircabin";
+          state.selected?.kind === "aircabin" ||
+          state.selected?.kind === "ridealong";
         const stationRefreshDue =
           now - lastStationBoardRefreshTs >= 1000 && isStationSelection(state.selected);
         if (state.playing && (movingSel || stationRefreshDue)) {
@@ -1041,7 +1141,8 @@ async function bootstrap(): Promise<void> {
           (state.selected?.kind === "portcall" ||
             state.selected?.kind === "train" ||
             state.selected?.kind === "plane" ||
-            state.selected?.kind === "aircabin")
+            state.selected?.kind === "aircabin" ||
+            state.selected?.kind === "ridealong")
         ) {
           const bounds = mapViewer.getViewportInfo();
           labelLayer.render(
@@ -1054,6 +1155,7 @@ async function bootstrap(): Promise<void> {
             resolvedTrains,
             resolvedPlanes,
             resolvedAirCabins,
+            activeRideCar,
           );
         }
         renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);

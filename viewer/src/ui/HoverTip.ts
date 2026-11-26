@@ -51,6 +51,13 @@ export function describePick(pick: MapPick, lang: Lang): TipText {
         sub: `${en ? c.directionEn : c.directionJa} · ${Math.round(c.cableElevM)} m`,
       };
     }
+    case "ridealong": {
+      const car = pick.car;
+      return {
+        title: en ? car.labelEn : car.labelJa,
+        sub: `${en ? car.districtEn : car.districtJa} · ${Math.round(car.speedKmh)} km/h`,
+      };
+    }
     case "portcall": {
       const pc = pick.portCall;
       const kind = d.vesselKinds[pc.vesselKind ?? "cruise"];

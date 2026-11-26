@@ -1,6 +1,6 @@
 import type { Lang } from "../i18n.js";
 
-export type WeatherMode = "live" | "rain" | "clear";
+export type WeatherMode = "live" | "rain" | "clear" | "fog";
 
 export interface LiveWeatherPayload {
   ok: boolean;
@@ -20,11 +20,18 @@ export interface ResolvedWeatherState {
   rainIntensity: number;
   windSlope: number;
   isRaining: boolean;
+  cloudCover: number;
+  mistIntensity: number;
+  windSpeedKmh: number;
   statusText: string;
 }
 
 const DIRECT_OPEN_METEO_URL =
   "https://api.open-meteo.com/v1/forecast?latitude=35.4437&longitude=139.6380&current=temperature_2m,weather_code,precipitation,rain,showers,wind_speed_10m,cloud_cover&timezone=Asia%2FTokyo";
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v));
+}
 
 function classifyFallbackWmo(
   code: number,
@@ -51,7 +58,7 @@ function classifyFallbackWmo(
     };
   }
   if (code === 45 || code === 48) {
-    return { condition: "mist", rainIntensity: 0, labelJa: "霧の横浜港", labelEn: "misty" };
+    return { condition: "mist", rainIntensity: 0, labelJa: "霧の横浜港", labelEn: "misty harbor" };
   }
   if (code >= 2 && code <= 3) {
     return {
@@ -134,6 +141,22 @@ export function resolveWeatherState(
       rainIntensity,
       windSlope: Math.min(0.28, 0.08 + windKmh * 0.006),
       isRaining: true,
+      cloudCover: clamp(Math.max(0.85, (liveWeather?.cloudCover ?? 88) / 100), 0, 1),
+      mistIntensity: 0.28,
+      windSpeedKmh: windKmh,
+      statusText: `${tempPrefix}${label}`.trim(),
+    };
+  }
+
+  if (mode === "fog") {
+    const label = lang === "en" ? "harbor fog" : "霧の横浜港";
+    return {
+      rainIntensity: 0,
+      windSlope: 0.05,
+      isRaining: false,
+      cloudCover: 0.72,
+      mistIntensity: 0.85,
+      windSpeedKmh: 9,
       statusText: `${tempPrefix}${label}`.trim(),
     };
   }
@@ -143,6 +166,9 @@ export function resolveWeatherState(
       rainIntensity: 0,
       windSlope: 0.06,
       isRaining: false,
+      cloudCover: 0.08,
+      mistIntensity: 0,
+      windSpeedKmh: liveWeather?.windSpeedKmh ?? 8,
       statusText: `${tempPrefix}${skyDescription}`.trim(),
     };
   }
@@ -150,20 +176,22 @@ export function resolveWeatherState(
   // Live weather from Open-Meteo
   if (liveWeather && liveWeather.ok) {
     const isRaining = liveWeather.rainIntensity >= 0.1;
+    const isMist = liveWeather.condition === "mist";
     const label =
       lang === "en"
-        ? liveWeather.rainIntensity > 0
-          ? liveWeather.labelEn
-          : `${liveWeather.labelEn}`
+        ? liveWeather.labelEn
         : isRaining
           ? liveWeather.labelJa
-          : liveWeather.condition === "cloudy" || liveWeather.condition === "mist"
+          : liveWeather.condition === "cloudy" || isMist
             ? liveWeather.labelJa
             : skyDescription;
     return {
       rainIntensity: liveWeather.rainIntensity,
-      windSlope: Math.min(0.30, 0.06 + liveWeather.windSpeedKmh * 0.006),
+      windSlope: Math.min(0.3, 0.06 + liveWeather.windSpeedKmh * 0.006),
       isRaining,
+      cloudCover: clamp(liveWeather.cloudCover / 100, 0, 1),
+      mistIntensity: isMist ? 0.78 : isRaining ? 0.22 : 0,
+      windSpeedKmh: liveWeather.windSpeedKmh,
       statusText: `${tempPrefix}${label}`.trim(),
     };
   }
@@ -172,6 +200,9 @@ export function resolveWeatherState(
     rainIntensity: 0,
     windSlope: 0.08,
     isRaining: false,
+    cloudCover: 0.2,
+    mistIntensity: 0,
+    windSpeedKmh: 10,
     statusText: skyDescription,
   };
 }

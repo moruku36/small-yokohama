@@ -2,6 +2,7 @@ import { wgs84ToImage, type PoiRecord } from "@small-yokohama/core";
 import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
 import type { ResolvedPlane } from "../data/planeFeed.js";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
+import type { ResolvedRideAlongCar } from "../data/trafficFeed.js";
 import type { ResolvedTrain } from "../data/trainFeed.js";
 import type { ResolvedFeedState } from "../data/vehicleFeed.js";
 import { formatBuildingType, formatSurfaceKind } from "../i18n.js";
@@ -124,6 +125,7 @@ export class LabelLayer {
     trains: readonly ResolvedTrain[] = [],
     planes: readonly ResolvedPlane[] = [],
     airCabins: readonly ResolvedAirCabinGondola[] = [],
+    rideCar: ResolvedRideAlongCar | null = null,
   ): { px: number; py: number; label: string; id: string } | null {
     const sel = state.selected;
     if (!sel) return null;
@@ -188,6 +190,16 @@ export class LabelLayer {
         id: `ac:${c.id}`,
       };
     }
+    if (sel.kind === "ridealong") {
+      const car = rideCar && rideCar.carId === sel.car.carId ? rideCar : sel.car;
+      const img = wgs84ToImage(bundle.camera, car.lon, car.lat, car.elevM + 3.2);
+      return {
+        px: img.px,
+        py: img.py,
+        label: `${state.lang === "en" ? car.labelEn : car.labelJa} · ${car.speedKmh} km/h`,
+        id: `ra:${car.carId}`,
+      };
+    }
     if (sel.kind === "feature") {
       const f = sel.feature;
       const label =
@@ -221,6 +233,7 @@ export class LabelLayer {
     trains: readonly ResolvedTrain[] = [],
     planes: readonly ResolvedPlane[] = [],
     airCabins: readonly ResolvedAirCabinGondola[] = [],
+    rideCar: ResolvedRideAlongCar | null = null,
   ): void {
     if (!bounds) {
       if (container.childElementCount > 0) {
@@ -236,7 +249,7 @@ export class LabelLayer {
       return;
     }
 
-    const selAnchor = this.resolveSelectedAnchor(bundle, state, feed, trains, planes, airCabins);
+    const selAnchor = this.resolveSelectedAnchor(bundle, state, feed, trains, planes, airCabins, rideCar);
     const renderKey = [
       state.lang,
       state.showLabels ? "1" : "0",

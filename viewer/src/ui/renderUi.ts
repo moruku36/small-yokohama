@@ -4,9 +4,11 @@ import {
   type PoiRecord,
 } from "@small-yokohama/core";
 import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
+import { resolveCosmoClockState } from "../data/cosmoClock.js";
 import type { ResolvedPlane } from "../data/planeFeed.js";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
 import { resolveStationDepartures } from "../data/stationDepartures.js";
+import type { ResolvedRideAlongCar } from "../data/trafficFeed.js";
 import type { ResolvedTrain, YokohamaRailBundle } from "../data/trainFeed.js";
 import type { AnimatedPortCall, ResolvedFeedState } from "../data/vehicleFeed.js";
 import type { WeatherMode } from "../data/weatherFeed.js";
@@ -30,6 +32,7 @@ export type BooleanOptionKey =
   | "showBoats"
   | "showPlanes"
   | "showAirCabin"
+  | "showCosmoClock"
   | "showTraffic"
   | "showPedestrians"
   | "showLabels"
@@ -44,6 +47,8 @@ export interface UiHandlers {
   onSetTab: (tab: DropTab) => void;
   onSearchQuery: (q: string) => void;
   onToggleTv: () => void;
+  onStartRideAlong?: () => void;
+  onSwitchRideAlong?: () => void;
   onShare: (anchorEl?: HTMLElement | null) => Promise<boolean>;
   onToggleAbout: (open: boolean) => void;
   onToggleLang: () => void;
@@ -99,6 +104,7 @@ export function renderBar(
       <button type="button" id="btn-tab-places" aria-expanded="${state.activeTab === "places"}">${escapeHtml(d.navPlaces)}</button>
       <button type="button" id="btn-tab-layers" aria-expanded="${state.activeTab === "layers"}">${escapeHtml(d.navLayers)}</button>
       <button type="button" id="btn-tv" class="${state.tvMode ? "active" : ""}" aria-pressed="${state.tvMode}">${escapeHtml(d.navTv)}</button>
+      <button type="button" id="btn-ride" class="${state.selected?.kind === "ridealong" ? "active" : ""}" aria-pressed="${state.selected?.kind === "ridealong"}">${escapeHtml(d.navRide)}</button>
       <button type="button" id="btn-share">${escapeHtml(d.navShare)}</button>
       <button type="button" id="btn-about" aria-expanded="${state.aboutOpen}">${escapeHtml(d.navAbout)}</button>
       <button type="button" id="btn-lang">${escapeHtml(d.navLang)}</button>
@@ -115,6 +121,7 @@ export function renderBar(
     handlers.onSetTab(state.activeTab === "layers" ? null : "layers");
   });
   el.querySelector("#btn-tv")?.addEventListener("click", handlers.onToggleTv);
+  el.querySelector("#btn-ride")?.addEventListener("click", () => handlers.onStartRideAlong?.());
   el.querySelector("#btn-share")?.addEventListener("click", async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
     const ok = await handlers.onShare(btn);
@@ -503,6 +510,12 @@ export function renderDrop(
         : `${planeCount}機`;
   const cabinLabel =
     state.lang === "en" ? `${airCabins.length || 16} cabins` : `${airCabins.length || 16}基`;
+  const cosmo = resolveCosmoClockState(
+    getSunDateForHourJst(state.sunHourJst),
+    state.simTimeSec,
+    state.reducedMotion,
+  );
+  const cosmoLabel = `${cosmo.timeText} · ${state.lang === "en" ? cosmo.showNameEn : cosmo.showNameJa}`;
   const presets = getSkyPresetsForDate(new Date());
   const skyItems: Array<{ label: string; value: number | null }> = [
     { label: d.skyPresets.day, value: presets.day },
@@ -541,6 +554,10 @@ export function renderDrop(
         <span>${escapeHtml(d.layerPlanes)}</span>
         <small>${escapeHtml(planeLabel)}</small>
       </button>
+      <button type="button" class="layer-btn" data-toggle="showCosmoClock" aria-pressed="${state.showCosmoClock}">
+        <span>${escapeHtml(d.layerCosmoClock)}</span>
+        <small>${escapeHtml(cosmoLabel)}</small>
+      </button>
       <button type="button" class="layer-btn" data-toggle="showTraffic" aria-pressed="${state.showTraffic}">
         <span>${escapeHtml(d.layerTraffic)}</span>
         <small>OSM</small>
@@ -574,7 +591,7 @@ export function renderDrop(
       <div class="sky-row">
         <span class="sky-row-label">${escapeHtml(d.layerWeather)}</span>
         <div class="sky-pills" role="group" aria-label="${escapeHtml(d.layerWeather)}">
-          ${(["live", "clear", "rain"] as const)
+          ${(["live", "clear", "rain", "fog"] as const)
             .map((m) => {
               const active = state.weatherMode === m;
               return `<button type="button" class="sky-pill${active ? " active" : ""}" data-weather="${m}" aria-pressed="${active}">${escapeHtml(d.weatherPresets[m])}</button>`;
@@ -839,6 +856,25 @@ export function renderCard(
       <dd>OpenStreetMap / SENYO</dd>
     `;
     gmapsUrl = buildGoogleMapsUrl(c.lat, c.lon, d.airCabinName);
+  } else if (sel.kind === "ridealong") {
+    const car = sel.car;
+    title = state.lang === "en" ? car.labelEn : car.labelJa;
+    sub = `${state.lang === "en" ? car.districtEn : car.districtJa} · ${d.rideAlongTitle}`;
+    badgeHtml = `<span class="badge observed">${escapeHtml(d.rideAlongBadge)}</span>`;
+    const sigText = d.rideSignals[car.signalState];
+    rowsHtml = `
+      <dt>${escapeHtml(d.fields.status)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? car.statusEn : car.statusJa)}</dd>
+      <dt>${escapeHtml(d.fields.district)}</dt>
+      <dd>${escapeHtml(state.lang === "en" ? car.districtEn : car.districtJa)}</dd>
+      <dt>${escapeHtml(d.fields.speed)}</dt>
+      <dd>${car.speedKmh} km/h</dd>
+      <dt>${escapeHtml(d.fields.signal)}</dt>
+      <dd><span class="sig-dot ${car.signalState}" aria-hidden="true"></span>${escapeHtml(sigText)}</dd>
+      <dt>${escapeHtml(d.fields.source)}</dt>
+      <dd>OpenStreetMap / Yokohama Road Network</dd>
+    `;
+    gmapsUrl = buildGoogleMapsUrl(car.lat, car.lon, title);
   } else if (sel.kind === "landmark") {
     const lm = sel.landmark;
     title = state.lang === "en" ? lm.nameEn : lm.nameJa;
@@ -855,7 +891,19 @@ export function renderCard(
       trains,
     );
     const addr = lm.address ? formatAddress(lm.address, state.lang) : "";
+    const cosmoRow =
+      lm.id === "lm-cosmo-world"
+        ? (() => {
+            const cc = resolveCosmoClockState(
+              getSunDateForHourJst(state.sunHourJst),
+              state.simTimeSec,
+              state.reducedMotion,
+            );
+            return `<dt>${escapeHtml(d.fields.cosmoShow)}</dt><dd>${escapeHtml(cc.timeText)} · ${escapeHtml(state.lang === "en" ? cc.showNameEn : cc.showNameJa)}</dd>`;
+          })()
+        : "";
     rowsHtml = `
+      ${cosmoRow}
       ${lm.heightM ? `<dt>${escapeHtml(d.fields.height)}</dt><dd>${lm.heightM.toFixed(1)} m</dd>` : ""}
       ${lm.levels ? `<dt>${escapeHtml(d.fields.levels)}</dt><dd>${lm.levels}</dd>` : ""}
       ${addr ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(addr)}</dd>` : ""}
@@ -973,12 +1021,19 @@ export function renderCard(
       sel.kind === "train" ||
       sel.kind === "plane" ||
       sel.kind === "aircabin" ||
+      sel.kind === "ridealong" ||
       (sel.kind === "portcall" && sel.portCall.moving !== false)
-        ? `<button type="button" class="follow-btn" id="btn-follow" aria-pressed="${state.following}">${
-            state.following
-              ? `<span class="follow-dot" aria-hidden="true"></span>${escapeHtml(d.followingLabel)}`
-              : escapeHtml(d.followLabel)
-          }</button>`
+        ? `<div class="ride-actions">
+            <button type="button" class="follow-btn" id="btn-follow" aria-pressed="${state.following}">${
+              state.following
+                ? `<span class="follow-dot" aria-hidden="true"></span>${escapeHtml(d.followingLabel)}`
+                : escapeHtml(d.followLabel)
+            }</button>${
+              sel.kind === "ridealong"
+                ? `<button type="button" class="follow-btn" id="btn-switch-ride">${escapeHtml(d.rideAlongSwitch)}</button>`
+                : ""
+            }
+          </div>`
         : ""
     }
     ${extraBlockHtml}
@@ -988,6 +1043,9 @@ export function renderCard(
 
   el.querySelector("#btn-card-close")?.addEventListener("click", handlers.onClearSelection);
   el.querySelector("#btn-follow")?.addEventListener("click", handlers.onToggleFollow);
+  el.querySelector("#btn-switch-ride")?.addEventListener("click", () =>
+    handlers.onSwitchRideAlong?.(),
+  );
 }
 
 export function renderStatus(

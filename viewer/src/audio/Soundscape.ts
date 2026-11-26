@@ -20,6 +20,8 @@ export interface SoundSceneInput {
   shipCount: number;
   /** 0 (whole city in view) .. 1 (down at street level): nearer is louder. */
   closeness: number;
+  /** 0..1 harbor sea mist intensity (increases foghorn cadence). */
+  mistIntensity?: number;
 }
 
 type Ctx = AudioContext;
@@ -214,10 +216,11 @@ export class Soundscape {
 
   private scheduleHorn(inSec: number): void {
     this.later(inSec, () => {
-      if (this.scene.shipCount > 0 && !document.hidden) {
-        this.horn(Math.random() < 0.35);
+      const foggy = (this.scene.mistIntensity ?? 0) > 0.4;
+      if ((this.scene.shipCount > 0 || foggy) && !document.hidden) {
+        this.horn(foggy || Math.random() < 0.35);
       }
-      this.scheduleHorn(35 + Math.random() * 50);
+      this.scheduleHorn(foggy ? 22 + Math.random() * 26 : 35 + Math.random() * 50);
     });
   }
 

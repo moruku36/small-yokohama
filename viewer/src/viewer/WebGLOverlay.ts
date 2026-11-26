@@ -12,6 +12,10 @@ import {
   AIR_CABIN_TERMINALS,
   sampleAirCabinCable,
 } from "../data/airCabinFeed.js";
+import {
+  COSMO_CLOCK_ORIGIN,
+  type CosmoClockVisualState,
+} from "../data/cosmoClock.js";
 import type { PlaneMeshKind, ResolvedPlane } from "../data/planeFeed.js";
 import type { LoadedTilePixels } from "../data/releaseLoader.js";
 import type { AmbientCarInstance } from "../data/trafficFeed.js";
@@ -25,6 +29,8 @@ import {
   CARLIGHT_FRAG,
   CARLIGHT_VERT,
   CLOUD_FRAG,
+  COSMO_FRAG,
+  COSMO_VERT,
   FULLSCREEN_VERT,
   MARKER_FRAG,
   MARKER_VERT,
@@ -807,11 +813,16 @@ export interface OverlayRenderOptions {
   pedAlpha: number;
   rainIntensity: number;
   windSlope: number;
+  sunAltitudeDeg?: number;
+  cloudCover?: number;
+  mistIntensity?: number;
+  windSpeedKmh?: number;
   reducedMotion: boolean;
   selectedVehicleId: string | null;
   selectedTrainId: string | null;
   selectedPlaneId?: string | null;
   selectedAirCabinId?: string | null;
+  selectedRideCarId?: number | null;
   selectedPortCallId: string | null;
   gcps: readonly GroundControlPoint[];
   deckTestPoint: { lon: number; lat: number; elevationM: number };
@@ -819,6 +830,8 @@ export interface OverlayRenderOptions {
   planes?: readonly ResolvedPlane[];
   airCabins?: readonly ResolvedAirCabinGondola[];
   showAirCabin?: boolean;
+  cosmoClock?: CosmoClockVisualState | null;
+  showCosmoClock?: boolean;
 }
 
 export class WebGLOverlay {
@@ -828,11 +841,13 @@ export class WebGLOverlay {
   private readonly lampProg: WebGLProgram;
   private readonly carLightProg: WebGLProgram;
   private readonly vehicleProg: WebGLProgram;
+  private readonly cosmoProg: WebGLProgram;
   private readonly cloudProg: WebGLProgram;
   private readonly markerProg: WebGLProgram;
   private readonly rainProg: WebGLProgram;
   private readonly depthArrayTex: WebGLTexture;
   private readonly emptyVao: WebGLVertexArrayObject;
+  private readonly cosmoVao: WebGLVertexArrayObject;
   private readonly pedVao: WebGLVertexArrayObject;
   private readonly pedInstanceBuf: WebGLBuffer;
   private pedCount = 0;
@@ -901,6 +916,7 @@ export class WebGLOverlay {
     this.lampProg = linkProgram(gl, STREETLAMP_VERT, STREETLAMP_FRAG);
     this.carLightProg = linkProgram(gl, CARLIGHT_VERT, CARLIGHT_FRAG);
     this.vehicleProg = linkProgram(gl, VEHICLE_VERT, VEHICLE_FRAG);
+    this.cosmoProg = linkProgram(gl, COSMO_VERT, COSMO_FRAG);
     this.cloudProg = linkProgram(gl, FULLSCREEN_VERT, CLOUD_FRAG);
     this.markerProg = linkProgram(gl, MARKER_VERT, MARKER_FRAG);
     this.rainProg = linkProgram(gl, RAIN_VERT, RAIN_FRAG);
@@ -1144,6 +1160,21 @@ export class WebGLOverlay {
     );
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    // Cosmo Clock 21 vertical billboard quad VAO (-1..1 UV)
+    const cVao = gl.createVertexArray();
+    const cBuf = gl.createBuffer();
+    if (!cVao || !cBuf) throw new Error("Failed to create Cosmo Clock VAO");
+    this.cosmoVao = cVao;
+    gl.bindVertexArray(cVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuf);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW,
+    );
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     this.markerVao = mVao;
 
     gl.bindVertexArray(null);
@@ -1239,11 +1270,32 @@ export class WebGLOverlay {
       gl.getUniformLocation(this.overlayProg, "u_workingOverlap"),
       this.camera.workingGrid.overlapPx,
     );
+    gl.uniform1f(gl.getUniformLocation(this.overlayProg, "u_simTimeSec"), opts.simTimeSec);
+    gl.uniform1f(
+      gl.getUniformLocation(this.overlayProg, "u_sunAltitudeDeg"),
+      opts.sunAltitudeDeg ?? 28,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.overlayProg, "u_reducedMotion"),
+      opts.reducedMotion ? 1 : 0,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.overlayProg, "u_cloudCover"),
+      opts.cloudCover ?? 0.2,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.overlayProg, "u_mistIntensity"),
+      opts.mistIntensity ?? 0,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.overlayProg, "u_windSpeed"),
+      opts.windSpeedKmh ?? 10,
+    );
 
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // 1a. Illustrated miniature pedestrians along sidewalks, plazas & piers
+    // 1a. Illustrated miniature pedestrians along sidewalks, plazas & piers (strolling & rain umbrellas)
     if (this.pedCount > 0 && opts.pedAlpha > 0.01) {
       gl.useProgram(this.pedProg);
       this.bindCommonDepthUniforms(this.pedProg);
@@ -1258,6 +1310,12 @@ export class WebGLOverlay {
         opts.viewBottomRightImgPx.y,
       );
       gl.uniform1f(gl.getUniformLocation(this.pedProg, "u_pedAlpha"), opts.pedAlpha);
+      gl.uniform1f(gl.getUniformLocation(this.pedProg, "u_simTimeSec"), opts.simTimeSec);
+      gl.uniform1f(gl.getUniformLocation(this.pedProg, "u_rainIntensity"), opts.rainIntensity);
+      gl.uniform1f(
+        gl.getUniformLocation(this.pedProg, "u_reducedMotion"),
+        opts.reducedMotion ? 1 : 0,
+      );
       gl.uniform3f(
         gl.getUniformLocation(this.pedProg, "u_skyTintRgb"),
         opts.skyTintRgb[0],
@@ -1288,7 +1346,8 @@ export class WebGLOverlay {
     }
 
     // 1c. Ground-projected Gaussian car headlights & red brake/taillight halos (drawn before 3D cars)
-    const hasAmbientCars = opts.carAlpha > 0.01 && opts.ambientCars.length > 0;
+    const hasAmbientCars =
+      opts.ambientCars.length > 0 && (opts.carAlpha > 0.01 || opts.selectedRideCarId != null);
     const imgPxPerCssPx =
       (opts.viewBottomRightImgPx.x - opts.viewTopLeftImgPx.x) / Math.max(1, opts.viewportCssWidth);
     const beamHeadIntensity =
@@ -1511,10 +1570,17 @@ export class WebGLOverlay {
         }
       }
 
-      // 2e. Ambient zoom-in Yokohama street cars + crisp comic ink silhouette outlines
+      // 2e. Ambient zoom-in Yokohama street cars + Ride Along autonomous pod highlight
       if (hasAmbientCars) {
-        const drawAmbientFleet = () => {
+        const drawAmbientFleet = (outlinesOnly: boolean) => {
           for (const ac of opts.ambientCars) {
+            const isSelRide =
+              opts.selectedRideCarId !== null &&
+              opts.selectedRideCarId !== undefined &&
+              ac.carId === opts.selectedRideCarId;
+            if (!isSelRide && outlinesOnly && (imgPxPerCssPx >= 1.8 || opts.carAlpha <= 0.5)) {
+              continue;
+            }
             const mesh =
               ac.kind === 1
                 ? this.taxiMesh
@@ -1529,23 +1595,32 @@ export class WebGLOverlay {
             const localPos = wgs84ToLocal(c, ac.lon, ac.lat, ac.elevM);
             gl.uniform3f(uOriginLoc, localPos[0], localPos[1], localPos[2]);
             gl.uniform1f(uHeadingLoc, (ac.bearingDeg * Math.PI) / 180);
+            if (!outlinesOnly) {
+              if (isSelRide) {
+                gl.uniform3f(uTintLoc, 1.15 * vBri, 1.32 * vBri, 1.38 * vBri);
+                gl.uniform1f(uSelectedLoc, 1);
+                gl.uniform1f(uGhostLoc, 0.36);
+                gl.uniform1f(uAlphaLoc, 1.0);
+              } else {
+                gl.uniform3f(uTintLoc, vBri, vBri, vBri);
+                gl.uniform1f(uSelectedLoc, 0);
+                gl.uniform1f(uGhostLoc, 0);
+                gl.uniform1f(uAlphaLoc, opts.carAlpha);
+              }
+            }
             gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
           }
         };
 
         gl.uniform3f(uScaleLoc, 1, 1, 1);
-        gl.uniform3f(uTintLoc, vBri, vBri, vBri);
-        gl.uniform1f(uSelectedLoc, 0);
-        gl.uniform1f(uGhostLoc, 0);
         gl.uniform1f(uOutlineExpandLoc, 0);
         gl.uniform1f(uIsOutlineLoc, 0);
-        gl.uniform1f(uAlphaLoc, opts.carAlpha);
-        drawAmbientFleet();
+        drawAmbientFleet(false);
 
-        if (imgPxPerCssPx < 1.8 && opts.carAlpha > 0.5) {
+        if ((imgPxPerCssPx < 1.8 && opts.carAlpha > 0.5) || opts.selectedRideCarId != null) {
           gl.uniform1f(uOutlineExpandLoc, 0.14);
           gl.uniform1f(uIsOutlineLoc, 1);
-          drawAmbientFleet();
+          drawAmbientFleet(true);
           gl.uniform1f(uOutlineExpandLoc, 0);
           gl.uniform1f(uIsOutlineLoc, 0);
         }
@@ -1627,6 +1702,84 @@ export class WebGLOverlay {
       }
     }
 
+    // 2h. Cosmo Clock 21 animated 3D Ferris wheel + night LED illumination + live JST clock
+    if (opts.showCosmoClock !== false && opts.cosmoClock) {
+      const c = this.camera;
+      const cosmo = opts.cosmoClock;
+      const rawHub = wgs84ToLocal(
+        c,
+        COSMO_CLOCK_ORIGIN.lon,
+        COSMO_CLOCK_ORIGIN.lat,
+        COSMO_CLOCK_ORIGIN.hubElevM,
+      );
+      // Offset 14m toward camera along -forward so the wheel stands clean against skyline/sky
+      const hubPos: readonly [number, number, number] = [
+        rawHub[0] - c.basis.forward[0] * 14,
+        rawHub[1] - c.basis.forward[1] * 14,
+        rawHub[2] - c.basis.forward[2] * 14,
+      ];
+      const az = (COSMO_CLOCK_ORIGIN.planeAzimuthDeg * Math.PI) / 180;
+
+      gl.disable(gl.DEPTH_TEST);
+      gl.useProgram(this.cosmoProg);
+      this.bindCommonDepthUniforms(this.cosmoProg);
+      gl.uniform3fv(
+        gl.getUniformLocation(this.cosmoProg, "u_cameraOriginLocalM"),
+        c.cameraOriginLocalM,
+      );
+      gl.uniform3fv(gl.getUniformLocation(this.cosmoProg, "u_camRight"), c.basis.right);
+      gl.uniform3fv(gl.getUniformLocation(this.cosmoProg, "u_camUp"), c.basis.up);
+      gl.uniform3fv(gl.getUniformLocation(this.cosmoProg, "u_camForward"), c.basis.forward);
+      gl.uniform2f(
+        gl.getUniformLocation(this.cosmoProg, "u_imageOriginPx"),
+        c.imageOriginPx.x,
+        c.imageOriginPx.y,
+      );
+      gl.uniform1f(gl.getUniformLocation(this.cosmoProg, "u_metersPerPixel"), c.metersPerPixel);
+      gl.uniform2f(
+        gl.getUniformLocation(this.cosmoProg, "u_viewTopLeftPx"),
+        opts.viewTopLeftImgPx.x,
+        opts.viewTopLeftImgPx.y,
+      );
+      gl.uniform2f(
+        gl.getUniformLocation(this.cosmoProg, "u_viewBottomRightPx"),
+        opts.viewBottomRightImgPx.x,
+        opts.viewBottomRightImgPx.y,
+      );
+      gl.uniform3f(
+        gl.getUniformLocation(this.cosmoProg, "u_centerLocalM"),
+        hubPos[0],
+        hubPos[1],
+        hubPos[2],
+      );
+      gl.uniform3f(
+        gl.getUniformLocation(this.cosmoProg, "u_wheelRightLocal"),
+        Math.sin(az),
+        Math.cos(az),
+        0,
+      );
+      gl.uniform1f(
+        gl.getUniformLocation(this.cosmoProg, "u_radiusM"),
+        COSMO_CLOCK_ORIGIN.wheelRadiusM,
+      );
+      gl.uniform1f(gl.getUniformLocation(this.cosmoProg, "u_nightIntensity"), opts.nightIntensity);
+      gl.uniform1f(gl.getUniformLocation(this.cosmoProg, "u_xrayMode"), opts.xrayOcclusion ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(this.cosmoProg, "u_simTimeSec"), opts.simTimeSec);
+      gl.uniform1f(gl.getUniformLocation(this.cosmoProg, "u_wheelAngleRad"), cosmo.wheelAngleRad);
+      gl.uniform1f(gl.getUniformLocation(this.cosmoProg, "u_showMode"), cosmo.showMode);
+      gl.uniform4i(
+        gl.getUniformLocation(this.cosmoProg, "u_clockDigits"),
+        cosmo.digits[0],
+        cosmo.digits[1],
+        cosmo.digits[2],
+        cosmo.digits[3],
+      );
+      gl.uniform1f(gl.getUniformLocation(this.cosmoProg, "u_colonOn"), cosmo.colonOn ? 1 : 0);
+
+      gl.bindVertexArray(this.cosmoVao);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
     // 2b. Fluffy Zoomed-Out Cumulus Clouds framing outer areas & canvas sky edge
     gl.disable(gl.DEPTH_TEST);
     gl.useProgram(this.cloudProg);
@@ -1644,6 +1797,8 @@ export class WebGLOverlay {
     gl.uniform1i(gl.getUniformLocation(this.cloudProg, "u_imageHeight"), this.camera.imageHeightPx);
     gl.uniform1f(gl.getUniformLocation(this.cloudProg, "u_imgPxPerCssPx"), imgPxPerCssPx);
     gl.uniform1f(gl.getUniformLocation(this.cloudProg, "u_simTimeSec"), opts.simTimeSec);
+    gl.uniform1f(gl.getUniformLocation(this.cloudProg, "u_cloudCover"), opts.cloudCover ?? 0.25);
+    gl.uniform1f(gl.getUniformLocation(this.cloudProg, "u_reducedMotion"), opts.reducedMotion ? 1 : 0);
     gl.uniform3f(
       gl.getUniformLocation(this.cloudProg, "u_cloudShadowRgb"),
       opts.cloudShadowRgb[0],

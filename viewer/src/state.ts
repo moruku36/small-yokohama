@@ -8,6 +8,7 @@ import {
 } from "@small-yokohama/core";
 import type { ResolvedAirCabinGondola } from "./data/airCabinFeed.js";
 import type { ResolvedPlane } from "./data/planeFeed.js";
+import type { ResolvedRideAlongCar } from "./data/trafficFeed.js";
 import type { ResolvedTrain } from "./data/trainFeed.js";
 import type { AnimatedPortCall } from "./data/vehicleFeed.js";
 import type { WeatherMode } from "./data/weatherFeed.js";
@@ -45,6 +46,7 @@ export type SelectedEntity =
   | { kind: "train"; train: ResolvedTrain }
   | { kind: "plane"; plane: ResolvedPlane }
   | { kind: "aircabin"; cabin: ResolvedAirCabinGondola }
+  | { kind: "ridealong"; car: ResolvedRideAlongCar }
   | { kind: "landmark"; landmark: Landmark }
   | { kind: "poi"; poi: PoiRecord }
   | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number }
@@ -66,6 +68,7 @@ export interface ViewerState {
   showBoats: boolean;
   showPlanes: boolean;
   showAirCabin: boolean;
+  showCosmoClock: boolean;
   showTraffic: boolean;
   showPedestrians: boolean;
   showLabels: boolean;
@@ -177,7 +180,7 @@ export function createInitialViewerState(
 
   const wParam = params.get("weather");
   const weatherMode: WeatherMode =
-    wParam === "rain" || wParam === "clear" ? wParam : "live";
+    wParam === "rain" || wParam === "clear" || wParam === "fog" ? wParam : "live";
 
   const theme: UiTheme =
     explicitTheme ??
@@ -200,6 +203,7 @@ export function createInitialViewerState(
     showBoats: params.get("boats") !== "0",
     showPlanes: params.get("planes") !== "0",
     showAirCabin: params.get("cabin") !== "0",
+    showCosmoClock: params.get("cosmo") !== "0",
     showTraffic: params.get("cars") !== "0",
     showPedestrians: params.get("people") !== "0",
     showLabels: params.get("labels") !== "0",
@@ -260,6 +264,7 @@ export function serializeShareUrl(
   if (!state.showBoats) p.set("boats", "0");
   if (!state.showPlanes) p.set("planes", "0");
   if (!state.showAirCabin) p.set("cabin", "0");
+  if (!state.showCosmoClock) p.set("cosmo", "0");
   if (!state.showTraffic) p.set("cars", "0");
   if (!state.showPedestrians) p.set("people", "0");
   if (!state.showLabels) p.set("labels", "0");

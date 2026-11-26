@@ -42,17 +42,59 @@ export interface AmbientTrafficBundle {
 }
 
 export interface AmbientCarInstance {
+  carId: number;
   lon: number;
   lat: number;
   elevM: number;
   bearingDeg: number;
+  speedMps: number;
+  signalState: "green" | "yellow" | "red";
   /** 0 = sedan, 1 = Yokohama taxi, 2 = white van, 3 = box truck, 4 = white autonomous sensor-pod car */
   kind: 0 | 1 | 2 | 3 | 4;
   colorIdx: number;
   braking: boolean;
 }
 
+export interface ResolvedRideAlongCar {
+  carId: number;
+  labelJa: string;
+  labelEn: string;
+  lon: number;
+  lat: number;
+  elevM: number;
+  bearingDeg: number;
+  speedKmh: number;
+  braking: boolean;
+  signalState: "green" | "yellow" | "red";
+  districtJa: string;
+  districtEn: string;
+  statusJa: string;
+  statusEn: string;
+}
+
 const D2R = Math.PI / 180;
+
+export function resolveYokohamaDistrict(lon: number, lat: number): { ja: string; en: string } {
+  if (lat >= 35.462 && lon <= 139.631) {
+    return { ja: "横浜駅周辺", en: "Yokohama Station" };
+  }
+  if (lat >= 35.449 && lon > 139.638) {
+    return { ja: "新港・赤レンガ倉庫", en: "Shinko & Red Brick" };
+  }
+  if (lat >= 35.451 && lon >= 139.626 && lon <= 139.638) {
+    return { ja: "みなとみらい", en: "Minato Mirai" };
+  }
+  if (lat < 35.449 && lon >= 139.642) {
+    return { ja: "山下公園・中華街", en: "Yamashita & Chinatown" };
+  }
+  if (lat < 35.451 && lon >= 139.632 && lon < 139.642) {
+    return { ja: "関内・馬車道", en: "Kannai & Bashamichi" };
+  }
+  if (lat >= 35.446 && lon < 139.632) {
+    return { ja: "野毛・桜木町", en: "Noge & Sakuragicho" };
+  }
+  return { ja: "横浜ベイエリア", en: "Yokohama Bay Area" };
+}
 
 export function computeTrafficDensityFactor(hourJst: number): number {
   const h = ((hourJst % 24) + 24) % 24;
@@ -123,6 +165,7 @@ interface SimCar {
   colorIdx: number;
   tier: number;
   braking: boolean;
+  signalState: "green" | "yellow" | "red";
   waitSec: number;
 }
 
@@ -182,12 +225,18 @@ function normalizeBundleEdges(bundle: AmbientTrafficBundle): AmbientRoadEdge[] {
 export class AmbientTrafficSimulator {
   readonly edges: AmbientRoadEdge[];
   private cars: SimCar[] = [];
+  private carById = new Map<number, SimCar>();
   private laneBuckets: Map<number, SimCar[]> = new Map();
+  private trackedCarId: number | null = null;
   private lastSimTimeSec = 0;
 
   constructor(bundle: AmbientTrafficBundle) {
     this.edges = normalizeBundleEdges(bundle);
     this.initFleet();
+  }
+
+  setTrackedCarId(carId: number | null): void {
+    this.trackedCarId = carId;
   }
 
   private pickNextEdge(edgeIdx: number, seed: number): number {
@@ -197,6 +246,29 @@ export class AmbientTrafficSimulator {
     // 72% straightest continuation, 28% turn onto alternate branch
     if (seed % 100 < 72) return e.next[0]!;
     return e.next[1 + (seed % (e.next.length - 1))]!;
+  }
+
+  private findClosestAdjacentEdge(fromEdgeIdx: number): number {
+    const cur = this.edges[fromEdgeIdx];
+    if (!cur || cur.pts.length < 3) return -1;
+    const endLon = cur.pts[cur.pts.length - 3]!;
+    const endLat = cur.pts[cur.pts.length - 2]!;
+    let bestIdx = -1;
+    let bestDist2 = Infinity;
+
+    for (let i = 0; i < this.edges.length; i++) {
+      if (i === fromEdgeIdx) continue;
+      const cand = this.edges[i]!;
+      if (cand.pts.length < 3 || cand.next.length === 0) continue;
+      const dx = (cand.pts[0]! - endLon) * 90_600;
+      const dy = (cand.pts[1]! - endLat) * 111_000;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestDist2) {
+        bestDist2 = d2;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
   }
 
   private pickKind(seed: number): 0 | 1 | 2 | 3 | 4 {
@@ -231,6 +303,7 @@ export class AmbientTrafficSimulator {
             colorIdx: seed % 9,
             tier: ((ei * 37 + lane * 13 + ci * 59) % 100) / 100,
             braking: false,
+            signalState: "green",
             waitSec: 0,
           });
         }
@@ -245,6 +318,7 @@ export class AmbientTrafficSimulator {
       return a.id - b.id;
     });
     this.cars = spawned;
+    this.carById = new Map(spawned.map((c) => [c.id, c]));
     this.lastSimTimeSec = 0;
   }
 
@@ -272,6 +346,36 @@ export class AmbientTrafficSimulator {
     return "red";
   }
 
+  private computeCarWorldPose(
+    edge: AmbientRoadEdge,
+    distM: number,
+    laneIdx: number,
+  ): { lon: number; lat: number; elevM: number; bearingDeg: number } {
+    const sample = sampleEdgeAt(edge, distM);
+    // Japan left-hand traffic lane offset (multi-lane boulevards & single-lane streets)
+    let offsetRightM = 0;
+    if (edge.oneway) {
+      offsetRightM = edge.lanes > 1 ? (laneIdx === 0 ? -1.55 : 1.55) : 0;
+    } else {
+      offsetRightM = edge.lanes > 1 ? (laneIdx === 0 ? -1.75 : -4.65) : -1.85;
+    }
+
+    let lon = sample.lon;
+    let lat = sample.lat;
+    if (offsetRightM !== 0) {
+      const rightRad = ((sample.bearingDeg + 90) * Math.PI) / 180;
+      lon += (Math.sin(rightRad) * offsetRightM) / 90_600;
+      lat += (Math.cos(rightRad) * offsetRightM) / 111_000;
+    }
+
+    return {
+      lon,
+      lat,
+      elevM: edge.elevM,
+      bearingDeg: sample.bearingDeg,
+    };
+  }
+
   private stepSingle(dtSec: number, simTimeSec: number, densityFactor: number): void {
     const dt = Math.min(0.25, Math.max(0.005, dtSec));
 
@@ -284,7 +388,7 @@ export class AmbientTrafficSimulator {
 
     for (let i = 0; i < this.cars.length; i++) {
       const car = this.cars[i]!;
-      if (car.tier > densityFactor) continue;
+      if (car.tier > densityFactor && car.id !== this.trackedCarId) continue;
       const key = car.edgeIdx * 2 + car.laneIdx;
       let bucket = this.laneBuckets.get(key);
       if (!bucket) {
@@ -320,6 +424,7 @@ export class AmbientTrafficSimulator {
 
         // 2. Intersection traffic light & all-way stop
         const sigState = this.getSignalState(edge.endSig, simTimeSec);
+        car.signalState = sigState;
         const stopLine = Math.max(2, edge.totalDistM - 5.2);
         const distToStop = stopLine - car.distM;
         const mustStopAtSignal =
@@ -351,14 +456,14 @@ export class AmbientTrafficSimulator {
         car.speedMps = Math.max(0, nextSpeed);
         car.distM += car.speedMps * dt;
 
-        // 3. Intersection transition or clean respawn at boundary
+        // 3. Intersection transition or clean continuous street handoff
         if (car.distM >= edge.totalDistM) {
           const overflow = car.distM - edge.totalDistM;
           const nextIdx = car.plannedNextIdx;
           if (nextIdx >= 0) {
             const nextEdge = this.edges[nextIdx]!;
             const nextLane = Math.min(car.laneIdx, nextEdge.lanes - 1);
-            const entryClear = edgeMinDist[nextIdx * 2 + nextLane]! > 7.5;
+            const entryClear = edgeMinDist[nextIdx * 2 + nextLane]! > 7.5 || car.id === this.trackedCarId;
             if (entryClear) {
               car.edgeIdx = nextIdx;
               car.laneIdx = nextLane;
@@ -369,9 +474,20 @@ export class AmbientTrafficSimulator {
               continue;
             }
           }
-          // Wait briefly or respawn on an open edge when exiting the map perimeter
+
           car.waitSec += dt;
-          if (nextIdx < 0 || car.waitSec > 8) {
+          if (car.id === this.trackedCarId) {
+            const nearbyIdx = this.findClosestAdjacentEdge(car.edgeIdx);
+            if (nearbyIdx >= 0) {
+              const nearEdge = this.edges[nearbyIdx]!;
+              car.edgeIdx = nearbyIdx;
+              car.laneIdx = Math.min(car.laneIdx, nearEdge.lanes - 1);
+              car.distM = 1.5;
+              car.plannedNextIdx = this.pickNextEdge(nearbyIdx, car.id * 29 + Math.floor(simTimeSec));
+              car.waitSec = 0;
+              continue;
+            }
+          } else if (nextIdx < 0 || car.waitSec > 8) {
             const altIdx = (car.edgeIdx + 29 + car.id * 7) % this.edges.length;
             const altEdge = this.edges[altIdx]!;
             const altLane = Math.min(car.laneIdx, altEdge.lanes - 1);
@@ -413,6 +529,68 @@ export class AmbientTrafficSimulator {
     this.lastSimTimeSec = simTimeSec;
   }
 
+  pickRideAlongCar(excludeCarId?: number | null): number | null {
+    const candidates: SimCar[] = [];
+    for (const car of this.cars) {
+      if (car.kind !== 4 || car.id === excludeCarId) continue;
+      const edge = this.edges[car.edgeIdx]!;
+      if (edge.hwRank < 2 || edge.next.length === 0 || edge.pts.length < 3) continue;
+      const lon = edge.pts[0]!;
+      const lat = edge.pts[1]!;
+      if (lon >= 139.62 && lon <= 139.654 && lat >= 35.44 && lat <= 35.468) {
+        candidates.push(car);
+      }
+    }
+    if (candidates.length === 0) {
+      const fallback = this.cars.find((c) => c.kind === 4 && c.id !== excludeCarId) ?? this.cars[0];
+      return fallback ? fallback.id : null;
+    }
+    const excludePos =
+      excludeCarId !== null && excludeCarId !== undefined
+        ? candidates.findIndex((c) => c.id > excludeCarId)
+        : 0;
+    const picked = candidates[excludePos >= 0 ? excludePos : 0]!;
+    return picked.id;
+  }
+
+  getCarById(carId: number): ResolvedRideAlongCar | null {
+    const car = this.carById.get(carId);
+    if (!car) return null;
+    const edge = this.edges[car.edgeIdx];
+    if (!edge) return null;
+    const pose = this.computeCarWorldPose(edge, car.distM, car.laneIdx);
+    const speedKmh = Math.round(car.speedMps * 3.6);
+    const district = resolveYokohamaDistrict(pose.lon, pose.lat);
+    const shortTag = String((car.id % 899) + 100);
+
+    let statusJa = `自動走行中 · ${speedKmh} km/h`;
+    let statusEn = `Cruising autonomously · ${speedKmh} km/h`;
+    if (car.speedMps < 0.6) {
+      statusJa = car.signalState === "red" ? "赤信号で停車中" : "前方車待ちで停車中";
+      statusEn = car.signalState === "red" ? "Stopped at red signal" : "Yielding in traffic";
+    } else if (car.braking) {
+      statusJa = `減速中 · ${speedKmh} km/h`;
+      statusEn = `Slowing for intersection · ${speedKmh} km/h`;
+    }
+
+    return {
+      carId: car.id,
+      labelJa: `横浜自動運転カー #${shortTag}`,
+      labelEn: `Autonomous Pod #${shortTag}`,
+      lon: pose.lon,
+      lat: pose.lat,
+      elevM: pose.elevM,
+      bearingDeg: pose.bearingDeg,
+      speedKmh,
+      braking: car.braking,
+      signalState: car.signalState,
+      districtJa: district.ja,
+      districtEn: district.en,
+      statusJa,
+      statusEn,
+    };
+  }
+
   getVisibleCars(
     topLeftPx: { x: number; y: number },
     bottomRightPx: { x: number; y: number },
@@ -427,12 +605,40 @@ export class AmbientTrafficSimulator {
     const minY = topLeftPx.y - pad;
     const maxY = bottomRightPx.y + pad;
 
-    const laneMetersPerDegLat = 111_000;
-    const laneMetersPerDegLon = 90_600;
     const out: AmbientCarInstance[] = [];
+    let trackedAdded = false;
+
+    if (this.trackedCarId !== null) {
+      const tracked = this.carById.get(this.trackedCarId);
+      if (tracked) {
+        const edge = this.edges[tracked.edgeIdx]!;
+        if (
+          edge.maxPx >= minX &&
+          edge.minPx <= maxX &&
+          edge.maxPy >= minY &&
+          edge.minPy <= maxY
+        ) {
+          const pose = this.computeCarWorldPose(edge, tracked.distM, tracked.laneIdx);
+          out.push({
+            carId: tracked.id,
+            lon: pose.lon,
+            lat: pose.lat,
+            elevM: pose.elevM,
+            bearingDeg: pose.bearingDeg,
+            speedMps: tracked.speedMps,
+            signalState: tracked.signalState,
+            kind: tracked.kind,
+            colorIdx: tracked.colorIdx,
+            braking: tracked.braking,
+          });
+          trackedAdded = true;
+        }
+      }
+    }
 
     for (let i = 0; i < this.cars.length; i++) {
       const car = this.cars[i]!;
+      if (trackedAdded && car.id === this.trackedCarId) continue;
       if (car.tier > density) continue;
       const edge = this.edges[car.edgeIdx]!;
       if (
@@ -444,28 +650,15 @@ export class AmbientTrafficSimulator {
         continue;
       }
 
-      const sample = sampleEdgeAt(edge, car.distM);
-      // Japan left-hand traffic lane offset (multi-lane boulevards & single-lane streets)
-      let offsetRightM = 0;
-      if (edge.oneway) {
-        offsetRightM = edge.lanes > 1 ? (car.laneIdx === 0 ? -1.55 : 1.55) : 0;
-      } else {
-        offsetRightM = edge.lanes > 1 ? (car.laneIdx === 0 ? -1.75 : -4.65) : -1.85;
-      }
-
-      let lon = sample.lon;
-      let lat = sample.lat;
-      if (offsetRightM !== 0) {
-        const rightRad = ((sample.bearingDeg + 90) * Math.PI) / 180;
-        lon += (Math.sin(rightRad) * offsetRightM) / laneMetersPerDegLon;
-        lat += (Math.cos(rightRad) * offsetRightM) / laneMetersPerDegLat;
-      }
-
+      const pose = this.computeCarWorldPose(edge, car.distM, car.laneIdx);
       out.push({
-        lon,
-        lat,
-        elevM: edge.elevM,
-        bearingDeg: sample.bearingDeg,
+        carId: car.id,
+        lon: pose.lon,
+        lat: pose.lat,
+        elevM: pose.elevM,
+        bearingDeg: pose.bearingDeg,
+        speedMps: car.speedMps,
+        signalState: car.signalState,
         kind: car.kind,
         colorIdx: car.colorIdx,
         braking: car.braking,
@@ -478,6 +671,15 @@ export class AmbientTrafficSimulator {
 }
 
 const simulatorCache = new WeakMap<AmbientTrafficBundle, AmbientTrafficSimulator>();
+
+function getOrCreateSimulator(bundle: AmbientTrafficBundle): AmbientTrafficSimulator {
+  let sim = simulatorCache.get(bundle);
+  if (!sim) {
+    sim = new AmbientTrafficSimulator(bundle);
+    simulatorCache.set(bundle, sim);
+  }
+  return sim;
+}
 
 export async function loadAmbientFixtures(baseReleaseUrl: string): Promise<{
   traffic: AmbientTrafficBundle | null;
@@ -520,16 +722,39 @@ export function sampleVisibleAmbientCars(
   camera: CameraManifest,
   maxCars = 420,
   hourJst = 12,
+  trackedCarId: number | null = null,
 ): AmbientCarInstance[] {
   void camera;
   void wgs84ToLocal;
   if (!bundle) return [];
 
-  let sim = simulatorCache.get(bundle);
-  if (!sim) {
-    sim = new AmbientTrafficSimulator(bundle);
-    simulatorCache.set(bundle, sim);
-  }
+  const sim = getOrCreateSimulator(bundle);
+  sim.setTrackedCarId(trackedCarId);
   sim.advanceTo(simTimeSec, hourJst);
   return sim.getVisibleCars(topLeftPx, bottomRightPx, hourJst, maxCars);
+}
+
+export function pickRideAlongCarId(
+  bundle: AmbientTrafficBundle | null,
+  simTimeSec: number,
+  hourJst = 12,
+  excludeCarId?: number | null,
+): number | null {
+  if (!bundle) return null;
+  const sim = getOrCreateSimulator(bundle);
+  sim.advanceTo(simTimeSec, hourJst);
+  return sim.pickRideAlongCar(excludeCarId);
+}
+
+export function resolveRideAlongCar(
+  bundle: AmbientTrafficBundle | null,
+  carId: number,
+  simTimeSec: number,
+  hourJst = 12,
+): ResolvedRideAlongCar | null {
+  if (!bundle) return null;
+  const sim = getOrCreateSimulator(bundle);
+  sim.setTrackedCarId(carId);
+  sim.advanceTo(simTimeSec, hourJst);
+  return sim.getCarById(carId);
 }

@@ -9,6 +9,7 @@ export interface I18nDict {
   navPlaces: string;
   navLayers: string;
   navTv: string;
+  navRide: string;
   navShare: string;
   navCopied: string;
   navAbout: string;
@@ -20,6 +21,7 @@ export interface I18nDict {
   layerBoats: string;
   layerPlanes: string;
   layerAirCabin: string;
+  layerCosmoClock: string;
   layerTraffic: string;
   layerPedestrians: string;
   layerLabels: string;
@@ -40,6 +42,7 @@ export interface I18nDict {
     live: string;
     clear: string;
     rain: string;
+    fog: string;
   };
   feedLabel: string;
   feedOptions: {
@@ -92,10 +95,17 @@ export interface I18nDict {
     ropewaySection: string;
     cabinNumber: string;
     eta: string;
+    district: string;
+    signal: string;
+    cosmoShow: string;
   };
   vesselKinds: Record<"cruise" | "cruiser" | "waterbus" | "tug", string>;
   planeKinds: Record<"heavyJet" | "narrowJet" | "heli", string>;
   airCabinName: string;
+  rideAlongTitle: string;
+  rideAlongSwitch: string;
+  rideAlongBadge: string;
+  rideSignals: Record<"green" | "yellow" | "red", string>;
   departureBoardTitle: string;
   departureDue: string;
   departureMin: string;
@@ -143,6 +153,7 @@ const JA: I18nDict = {
   navPlaces: "名所",
   navLayers: "レイヤー",
   navTv: "TV",
+  navRide: "乗車",
   navShare: "共有",
   navCopied: "コピー済",
   navAbout: "概要",
@@ -154,6 +165,7 @@ const JA: I18nDict = {
   layerBoats: "港の客船・入港予定",
   layerPlanes: "飛行機（羽田発着・ADS-B）",
   layerAirCabin: "YOKOHAMA AIR CABIN",
+  layerCosmoClock: "コスモクロック21（夜景演出）",
   layerTraffic: "街の車（ズーム時）",
   layerPedestrians: "街の人々",
   layerLabels: "地名ラベル",
@@ -169,11 +181,12 @@ const JA: I18nDict = {
     night: "夜",
     live: "現在",
   },
-  layerWeather: "天気・雨エフェクト",
+  layerWeather: "天気・雨・霧エフェクト",
   weatherPresets: {
     live: "自動",
     clear: "晴れ",
     rain: "雨",
+    fog: "霧",
   },
   feedLabel: "交通フィード",
   feedOptions: {
@@ -232,6 +245,9 @@ const JA: I18nDict = {
     ropewaySection: "運行区間",
     cabinNumber: "ゴンドラ番号",
     eta: "到着目安",
+    district: "走行エリア",
+    signal: "前方信号",
+    cosmoShow: "イルミネーション",
   },
   vesselKinds: {
     cruise: "大型客船",
@@ -245,6 +261,14 @@ const JA: I18nDict = {
     heli: "ヘリコプター",
   },
   airCabinName: "YOKOHAMA AIR CABIN",
+  rideAlongTitle: "自動運転モビリティ",
+  rideAlongSwitch: "別の車に乗換",
+  rideAlongBadge: "自律走行デモ",
+  rideSignals: {
+    green: "青信号",
+    yellow: "黄信号",
+    red: "赤信号",
+  },
   departureBoardTitle: "発車案内",
   departureDue: "まもなく",
   departureMin: "分",
@@ -298,6 +322,7 @@ const EN: I18nDict = {
   navPlaces: "Places",
   navLayers: "Layers",
   navTv: "TV",
+  navRide: "Ride",
   navShare: "Share",
   navCopied: "Copied",
   navAbout: "About",
@@ -309,6 +334,7 @@ const EN: I18nDict = {
   layerBoats: "Harbor ships & calls",
   layerPlanes: "Flights (Haneda / ADS-B)",
   layerAirCabin: "YOKOHAMA AIR CABIN",
+  layerCosmoClock: "Cosmo Clock 21 (Light Show)",
   layerTraffic: "Street traffic (zoom in)",
   layerPedestrians: "Pedestrians",
   layerLabels: "Labels",
@@ -324,11 +350,12 @@ const EN: I18nDict = {
     night: "Night",
     live: "Live",
   },
-  layerWeather: "Weather & rain",
+  layerWeather: "Weather, rain & fog",
   weatherPresets: {
     live: "Live",
     clear: "Clear",
     rain: "Rain",
+    fog: "Fog",
   },
   feedLabel: "Transit feed",
   feedOptions: {
@@ -387,6 +414,9 @@ const EN: I18nDict = {
     ropewaySection: "Route",
     cabinNumber: "Cabin",
     eta: "Est. arrival",
+    district: "District",
+    signal: "Next signal",
+    cosmoShow: "Light show",
   },
   vesselKinds: {
     cruise: "Cruise Liner",
@@ -400,6 +430,14 @@ const EN: I18nDict = {
     heli: "Helicopter",
   },
   airCabinName: "YOKOHAMA AIR CABIN",
+  rideAlongTitle: "Autonomous Ride",
+  rideAlongSwitch: "Switch car",
+  rideAlongBadge: "Autonomous",
+  rideSignals: {
+    green: "Green",
+    yellow: "Yellow",
+    red: "Red",
+  },
   departureBoardTitle: "Next Departures",
   departureDue: "Due",
   departureMin: "min",

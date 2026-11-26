@@ -1591,6 +1591,35 @@ html[data-theme="dark"] .dep-board {
   animation: ublink 1.4s steps(1) infinite;
 }
 
+.ride-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 4px;
+}
+
+.sig-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
+.sig-dot.green {
+  background: #2bb673;
+}
+
+.sig-dot.yellow {
+  background: #e5a93c;
+}
+
+.sig-dot.red {
+  background: #e0463c;
+}
+
 .sq #btn-sound[aria-pressed="true"] {
   background: var(--u-card);
 }
