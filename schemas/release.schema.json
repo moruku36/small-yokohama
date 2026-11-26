@@ -118,6 +118,7 @@
     },
     "featuresPath": { "type": "string" },
     "landmarksPath": { "type": "string" },
+    "buildingsPath": { "type": "string" },
     "qaReportPath": { "type": "string" },
     "credits": {
       "type": "array",

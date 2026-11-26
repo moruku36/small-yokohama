@@ -11,7 +11,12 @@ import {
   type Landmark,
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
-import { pickFeatureIdAtImagePx, type LoadedReleaseBundle } from "../data/releaseLoader.js";
+import {
+  pickFeatureIdAtImagePx,
+  resolveFeatureById,
+  resolveLandmarkForFeatureId,
+  type LoadedReleaseBundle,
+} from "../data/releaseLoader.js";
 import {
   sampleVisibleAmbientCars,
   type AmbientTrafficBundle,
@@ -1277,14 +1282,14 @@ export class MapViewer {
       }
     }
 
-    // 3. Pick static feature from lossless 24-bit surfaceId tile
+    // 3. Pick static feature or city-wide building from lossless 24-bit surfaceId tile
     const fid = pickFeatureIdAtImagePx(this.bundle, imgPt.x, imgPt.y);
     if (fid !== null) {
-      const lm = this.bundle.landmarks.find((l) => l.featureId === fid);
+      const lm = resolveLandmarkForFeatureId(this.bundle, fid);
       if (lm) {
         return { kind: "landmark", landmark: lm };
       }
-      const feat = this.bundle.featureById.get(fid);
+      const feat = resolveFeatureById(this.bundle, fid);
       if (
         feat &&
         feat.featureId > 1 &&

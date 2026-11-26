@@ -17,6 +17,7 @@ import path from "node:path";
 const BBOX = "35.427,139.601,35.480,139.665";
 const ORIGIN = [139.601, 35.427];
 const OUT_PATH = path.resolve("data/yokohama-osm-buildings.json");
+const META_OUT_PATH = path.resolve("data/yokohama-osm-building-meta.json");
 const WALKABLE_OUT_PATH = path.resolve("data/yokohama-osm-walkable.json");
 
 // The ground the drawing covers (the image corners of full-yokohama-v1 projected onto z = 0,
@@ -39,11 +40,11 @@ function insideFootprint(lon, lat) {
 }
 
 const OVERPASS_ENDPOINTS = [
+  "https://overpass.private.coffee/api/interpreter",
   "https://overpass-api.de/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "https://lz4.overpass-api.de/api/interpreter",
   "https://z.overpass-api.de/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter",
 ];
 
 // Above-ground buildings only (no underground malls, no parts: parts sit inside a building outline)
@@ -208,34 +209,177 @@ async function fetchWalkable() {
   );
 }
 
+const HAS_JA = /[\u3040-\u30ff\u3400-\u9fff\uff65-\uff9f]/;
+const LON_E6_TO_M = 1e-6 * Math.cos((35.45 * Math.PI) / 180) * 111320;
+const LAT_E6_TO_M = 1e-6 * 110950;
+
+function inferBuildingType(tags) {
+  const raw = (tags.building || "yes").trim().toLowerCase();
+  if (raw !== "yes") return raw;
+  if (tags.railway === "station" || tags.public_transport === "station") return "station";
+  if (tags.leisure === "stadium") return "stadium";
+  if (tags.tourism === "hotel") return "hotel";
+  if (tags.tourism === "museum") return "museum";
+  if (tags.amenity === "library") return "library";
+  if (tags.amenity === "hospital" || tags.amenity === "clinic") return "hospital";
+  if (tags.amenity === "university" || tags.amenity === "college") return "university";
+  if (tags.amenity === "school") return "school";
+  if (tags.amenity === "kindergarten") return "kindergarten";
+  if (tags.amenity === "place_of_worship") return "place_of_worship";
+  if (tags.amenity === "parking") return "parking";
+  if (tags.shop === "mall" || tags.shop === "department_store") return "mall";
+  if (tags.shop) return "retail";
+  if (tags.office) return "office";
+  return "yes";
+}
+
+function extractBuildingAddress(tags) {
+  if (tags["addr:full"]) return String(tags["addr:full"]).trim();
+  const baseParts = [];
+  for (const raw of [
+    tags["addr:city"],
+    tags["addr:suburb"],
+    tags["addr:quarter"],
+    tags["addr:neighbourhood"],
+  ]) {
+    const s = (raw ?? "").trim();
+    if (s && !baseParts.includes(s)) baseParts.push(s);
+  }
+  const block = (tags["addr:block_number"] ?? "").trim();
+  const house = (tags["addr:housenumber"] ?? "").trim();
+  const numPart = block && house && block !== house ? `${block}-${house}` : block || house;
+  if (baseParts.length === 0 && !numPart) return "";
+  return `${baseParts.join("")}${numPart}`;
+}
+
+function computeRingCentroidAndArea(ring) {
+  const n = Math.floor(ring.length / 2);
+  let area2 = 0;
+  let cxAcc = 0;
+  let cyAcc = 0;
+  let sx = 0;
+  let sy = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const x0 = ring[i * 2];
+    const y0 = ring[i * 2 + 1];
+    const x1 = ring[j * 2];
+    const y1 = ring[j * 2 + 1];
+    sx += x0;
+    sy += y0;
+    const cross = x0 * y1 - x1 * y0;
+    area2 += cross;
+    cxAcc += (x0 + x1) * cross;
+    cyAcc += (y0 + y1) * cross;
+  }
+  const lonE6 =
+    Math.abs(area2) > 1e-3 ? Math.round(cxAcc / (3 * area2)) : Math.round(sx / n);
+  const latE6 =
+    Math.abs(area2) > 1e-3 ? Math.round(cyAcc / (3 * area2)) : Math.round(sy / n);
+  const areaM2 = Math.round(0.5 * Math.abs(area2) * LON_E6_TO_M * LAT_E6_TO_M);
+  return { lonE6, latE6, areaM2 };
+}
+
+function buildMetaRecord(osmId, tags, heightM, ring, typeMap, types) {
+  const height10 = Math.round(heightM * 10);
+  const levelsRaw = num(tags["building:levels"]);
+  const levels =
+    Number.isFinite(levelsRaw) && levelsRaw > 0 ? Math.min(200, Math.round(levelsRaw)) : 0;
+  const bType = inferBuildingType(tags);
+  let typeIdx = typeMap.get(bType);
+  if (typeIdx === undefined) {
+    typeIdx = types.length;
+    types.push(bType);
+    typeMap.set(bType, typeIdx);
+  }
+  const { lonE6, latE6, areaM2 } = computeRingCentroidAndArea(ring);
+  const rawName = (tags.name ?? "").trim();
+  const nameJa = (tags["name:ja"] ?? rawName).trim();
+  const rawEn = (tags["name:en"] ?? "").trim();
+  const nameEn =
+    rawEn && !HAS_JA.test(rawEn)
+      ? rawEn
+      : rawName && !HAS_JA.test(rawName) && /[A-Za-z0-9]/.test(rawName)
+        ? rawName
+        : "";
+  const address = extractBuildingAddress(tags);
+  const rawDate =
+    tags.start_date ||
+    tags["building:start_date"] ||
+    tags.construction_date ||
+    tags.year_of_construction ||
+    "";
+  const ym = /\b(18\d{2}|19\d{2}|20\d{2})\b/.exec(String(rawDate));
+  const yearBuilt = ym ? ym[1] : "";
+  const category = (
+    tags.amenity ||
+    tags.tourism ||
+    tags.office ||
+    tags.shop ||
+    tags.historic ||
+    ""
+  ).trim();
+
+  const tuple = [
+    osmId,
+    height10,
+    levels,
+    typeIdx,
+    lonE6,
+    latE6,
+    areaM2,
+    nameJa,
+    nameEn,
+    address,
+    yearBuilt,
+    category,
+  ];
+  while (tuple.length > 7 && tuple[tuple.length - 1] === "") {
+    tuple.pop();
+  }
+  return tuple;
+}
+
 async function main() {
   if (process.argv.includes("--walkable-only")) {
     await fetchWalkable();
     return;
   }
+  const buildingsOnly = process.argv.includes("--buildings-only");
   const { url, data } = await fetchOverpass(QUERY);
   const buildings = [];
+  const metaRecords = [];
+  const types = [];
+  const typeMap = new Map();
+
   for (const el of data.elements) {
     const tags = el.tags ?? {};
     if (Number(tags.layer) < 0) continue;
     const h = Math.round(estimateHeightM(tags) * 10) / 10;
     if (el.type === "way" && Array.isArray(el.geometry)) {
       const ring = encodeRing(el.geometry);
-      if (ring) buildings.push([h, ...ring]);
+      if (ring) {
+        buildings.push([h, ...ring]);
+        metaRecords.push(buildMetaRecord(el.id, tags, h, ring, typeMap, types));
+      }
     } else if (el.type === "relation" && Array.isArray(el.members)) {
       for (const m of el.members) {
         if (m.role !== "outer" || !Array.isArray(m.geometry)) continue;
         const ring = encodeRing(m.geometry);
-        if (ring) buildings.push([h, ...ring]);
+        if (ring) {
+          buildings.push([h, ...ring]);
+          metaRecords.push(buildMetaRecord(el.id, tags, h, ring, typeMap, types));
+        }
       }
     }
   }
+  const fetchedAt = new Date().toISOString();
   const payload = {
     meta: {
       bbox: BBOX.split(",").map(Number),
       source: url,
       license: "© OpenStreetMap contributors (ODbL)",
-      fetchedAt: new Date().toISOString(),
+      fetchedAt,
       buildingCount: buildings.length,
       encoding: "[heightM, x0, y0, x1, y1, ...] with x=(lon-origin[0])*1e6, y=(lat-origin[1])*1e6",
     },
@@ -245,7 +389,30 @@ async function main() {
   fs.writeFileSync(OUT_PATH, `${JSON.stringify(payload)}\n`, "utf8");
   const kb = Math.round(fs.statSync(OUT_PATH).size / 1024);
   console.log(`[fetch-buildings] Wrote ${buildings.length} buildings to ${path.relative(process.cwd(), OUT_PATH)} (${kb} KB)`);
-  await fetchWalkable();
+
+  const metaPayload = {
+    meta: {
+      bbox: BBOX.split(",").map(Number),
+      source: url,
+      license: "© OpenStreetMap contributors (ODbL)",
+      fetchedAt,
+      buildingCount: metaRecords.length,
+      encoding:
+        "[osmId, height10, levels, typeIdx, lonE6, latE6, areaM2, nameJa?, nameEn?, address?, yearBuilt?, category?]",
+    },
+    origin: ORIGIN,
+    types,
+    records: metaRecords,
+  };
+  fs.writeFileSync(META_OUT_PATH, `${JSON.stringify(metaPayload)}\n`, "utf8");
+  const metaKb = Math.round(fs.statSync(META_OUT_PATH).size / 1024);
+  console.log(
+    `[fetch-buildings] Wrote ${metaRecords.length} building metadata records (${types.length} types) to ${path.relative(process.cwd(), META_OUT_PATH)} (${metaKb} KB)`,
+  );
+
+  if (!buildingsOnly) {
+    await fetchWalkable();
+  }
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}` || process.argv[1]?.endsWith("fetch-yokohama-osm-buildings.mjs")) {

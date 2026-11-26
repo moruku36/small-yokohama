@@ -133,6 +133,7 @@ export interface ReleaseManifest {
   };
   featuresPath: string;
   landmarksPath: string;
+  buildingsPath?: string;
   qaReportPath: string;
   credits: CreditRecord[];
 }
@@ -289,6 +290,14 @@ export interface SceneFeatureRecord {
   googleMapsUrl?: string;
   lon?: number;
   lat?: number;
+  buildingType?: string;
+  yearBuilt?: string;
+  areaM2?: number;
+  category?: string;
+  descriptionJa?: string;
+  descriptionEn?: string;
+  landmarkId?: string;
+  poiId?: string;
 }
 
 export interface SceneTriangle {

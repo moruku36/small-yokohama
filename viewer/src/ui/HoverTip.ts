@@ -1,4 +1,10 @@
-import { formatCategory, formatSurfaceKind, getDict, type Lang } from "../i18n.js";
+import {
+  formatBuildingType,
+  formatCategory,
+  formatSurfaceKind,
+  getDict,
+  type Lang,
+} from "../i18n.js";
 import type { MapPick } from "../viewer/MapViewer.js";
 
 /**
@@ -44,9 +50,16 @@ export function describePick(pick: MapPick, lang: Lang): TipText {
     case "feature": {
       const f = pick.feature;
       const name = (en ? f.nameEn : f.nameJa) || "";
-      const kind = formatSurfaceKind(f.surfaceKind, lang);
-      const height = f.heightM > 0 ? ` · ${f.heightM.toFixed(0)} m` : "";
-      return name ? { title: name, sub: `${kind}${height}` } : { title: kind, sub: height.slice(3) };
+      const kind = f.buildingType
+        ? formatBuildingType(f.buildingType, lang)
+        : formatSurfaceKind(f.surfaceKind, lang);
+      const parts: string[] = [];
+      if (name) parts.push(kind);
+      if (f.heightM > 0) parts.push(`${f.heightM.toFixed(0)} m`);
+      if (f.levels) parts.push(en ? `${f.levels}F` : `${f.levels}階`);
+      if (f.yearBuilt) parts.push(f.yearBuilt);
+      const sub = parts.join(" · ");
+      return name ? { title: name, sub } : { title: kind, sub };
     }
   }
 }

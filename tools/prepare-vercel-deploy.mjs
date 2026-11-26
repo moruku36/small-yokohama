@@ -114,8 +114,13 @@ function main() {
     throw new Error(`Viewer build failed with exit code ${buildRes.status}`);
   }
 
-  console.log("[prepare-vercel] Recreating deploy-vercel/...");
-  rmSync(DEPLOY_DIR, { recursive: true, force: true });
+  console.log("[prepare-vercel] Recreating deploy-vercel/ (preserving .vercel/)...");
+  if (existsSync(DEPLOY_DIR)) {
+    for (const entry of readdirSync(DEPLOY_DIR)) {
+      if (entry === ".vercel") continue;
+      rmSync(join(DEPLOY_DIR, entry), { recursive: true, force: true });
+    }
+  }
   mkdirSync(DST_RELEASE_DIR, { recursive: true });
 
   // Copy only built SPA entry, icons, manifest, serverless API routes, and bundled JS/CSS assets (never copy viewer/dist/releases/)
@@ -158,6 +163,10 @@ function main() {
   // Copy manifests, fixtures, and strictly lossless PNG data layers verbatim
   for (const name of ["release.json", "features.json", "landmarks.json", "qa-report.json"]) {
     cpSync(join(SRC_RELEASE_DIR, name), join(DST_RELEASE_DIR, name));
+  }
+  const srcBuildings = join(SRC_RELEASE_DIR, "buildings.json");
+  if (existsSync(srcBuildings)) {
+    cpSync(srcBuildings, join(DST_RELEASE_DIR, "buildings.json"));
   }
   for (const dirName of ["fixtures", "depth", "surface-id", "road-elevation"]) {
     cpSync(join(SRC_RELEASE_DIR, dirName), join(DST_RELEASE_DIR, dirName), { recursive: true });
@@ -209,6 +218,10 @@ function main() {
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
       {
+        source: "/releases/full-yokohama-v1/buildings.json",
+        headers: [{ key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" }],
+      },
+      {
         source: "/releases/current.json",
         headers: [{ key: "Cache-Control", value: "no-cache" }],
       },
@@ -245,9 +258,14 @@ function main() {
     throw new Error(`deploy-vercel size ${totalMb.toFixed(2)} MB exceeds 95 MB budget!`);
   }
 
+  const dstBuildingsPath = join(DST_RELEASE_DIR, "buildings.json");
+  const buildingsMb = existsSync(dstBuildingsPath)
+    ? (statSync(dstBuildingsPath).size / (1024 * 1024)).toFixed(2)
+    : "0.00";
+
   console.log(
     `[prepare-vercel] READY deploy-vercel/: ${totalStats.files} files, ${totalMb.toFixed(2)} MB total` +
-      ` (illustrated=${(illusStats.bytes / (1024 * 1024)).toFixed(2)} MB, plain=${(plainStats.bytes / (1024 * 1024)).toFixed(2)} MB)`,
+      ` (illustrated=${(illusStats.bytes / (1024 * 1024)).toFixed(2)} MB, plain=${(plainStats.bytes / (1024 * 1024)).toFixed(2)} MB, buildings=${buildingsMb} MB)`,
   );
 }
 

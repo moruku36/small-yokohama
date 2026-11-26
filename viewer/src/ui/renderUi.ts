@@ -9,6 +9,7 @@ import type { AnimatedPortCall, ResolvedFeedState } from "../data/vehicleFeed.js
 import type { WeatherMode } from "../data/weatherFeed.js";
 import {
   formatAddress,
+  formatBuildingType,
   formatCategory,
   formatDeckId,
   formatSourceKind,
@@ -53,6 +54,7 @@ export interface UiHandlers {
   onTogglePlay: () => void;
   onToggleOption: (key: BooleanOptionKey) => void;
   onSelectLandmarkId: (id: string) => void;
+  onSelectFeatureId: (fid: number) => void;
   onSelectPoi: (poi: PoiRecord) => void;
   onSelectPortCall: (pc: AnimatedPortCall) => void;
   onSelectTrain: (tr: ResolvedTrain) => void;
@@ -133,6 +135,7 @@ function buildSearchResultsHtml(
   type SearchHit =
     | { kind: "landmark"; id: string; title: string; sub: string; score: number }
     | { kind: "poi"; poi: PoiRecord; title: string; sub: string; score: number }
+    | { kind: "building"; featureId: number; title: string; sub: string; score: number }
     | { kind: "portcall"; pc: AnimatedPortCall; title: string; sub: string; score: number };
 
   const hits: SearchHit[] = [];
@@ -166,6 +169,32 @@ function buildSearchResultsHtml(
         sub: formatCategory(poi.category, state.lang),
         score: poi.tier + (title.toLowerCase().startsWith(q) && q ? -1 : 1),
       });
+      seenKeys.add(dedupeKey);
+    }
+  }
+
+  if (q.length >= 2) {
+    let bldAdded = 0;
+    for (const b of bundle.namedBuildings ?? []) {
+      const title = state.lang === "en" ? b.nameEn : b.nameJa;
+      if (!title) continue;
+      const dedupeKey = `${b.nameJa.toLowerCase()}|${b.nameEn.toLowerCase()}`;
+      if (seenKeys.has(dedupeKey)) continue;
+      const hay = `${b.nameJa} ${b.nameEn} ${b.buildingType} ${b.address}`.toLowerCase();
+      if (hay.includes(q)) {
+        const bTypeLabel = formatBuildingType(b.buildingType, state.lang);
+        const hLabel = b.heightM > 0 ? ` · ${b.heightM.toFixed(0)} m` : "";
+        hits.push({
+          kind: "building",
+          featureId: b.featureId,
+          title,
+          sub: `${bTypeLabel}${hLabel}`,
+          score: (title.toLowerCase().startsWith(q) ? 2 : 3) + (b.heightM > 35 ? -0.3 : 0),
+        });
+        seenKeys.add(dedupeKey);
+        bldAdded++;
+        if (bldAdded >= 40) break;
+      }
     }
   }
 
@@ -199,6 +228,9 @@ function buildSearchResultsHtml(
       if (h.kind === "poi") {
         return `<li><button type="button" data-poi-id="${escapeHtml(h.poi.id)}"><span class="r-name">${escapeHtml(h.title)}</span><span class="r-sub">${escapeHtml(h.sub)}</span></button></li>`;
       }
+      if (h.kind === "building") {
+        return `<li><button type="button" data-feature-id="${h.featureId}"><span class="r-name">${escapeHtml(h.title)}</span><span class="r-sub">${escapeHtml(h.sub)}</span></button></li>`;
+      }
       return `<li><button type="button" data-portcall-id="${escapeHtml(h.pc.id)}"><span class="r-name">${escapeHtml(h.title)}</span><span class="r-sub">${escapeHtml(h.sub)}</span></button></li>`;
     })
     .join("");
@@ -221,6 +253,13 @@ function bindListSelections(
     btn.addEventListener("click", () => {
       const poi = bundle.pois.find((p) => p.id === btn.dataset.poiId);
       if (poi) handlers.onSelectPoi(poi);
+    });
+  });
+
+  container.querySelectorAll<HTMLButtonElement>("button[data-feature-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const fid = Number(btn.dataset.featureId);
+      if (Number.isFinite(fid)) handlers.onSelectFeatureId(fid);
     });
   });
 
@@ -625,14 +664,27 @@ export function renderCard(
     gmapsUrl = p.googleMapsUrl || buildGoogleMapsUrl(p.lat, p.lon, title);
   } else if (sel.kind === "feature") {
     const f = sel.feature;
-    title = (state.lang === "en" ? f.nameEn : f.nameJa) || f.slug;
-    sub = `${sel.lat.toFixed(5)}, ${sel.lon.toFixed(5)}`;
-    badgeHtml = `<span class="badge">${escapeHtml(formatSurfaceKind(f.surfaceKind, state.lang))}</span>`;
+    const kindLabel = f.buildingType
+      ? formatBuildingType(f.buildingType, state.lang)
+      : formatSurfaceKind(f.surfaceKind, state.lang);
+    title = (state.lang === "en" ? f.nameEn : f.nameJa) || kindLabel;
+    sub =
+      state.lang === "ja" && f.nameEn && f.nameEn !== title
+        ? f.nameEn
+        : `${sel.lat.toFixed(5)}, ${sel.lon.toFixed(5)}`;
+    badgeHtml = `<span class="badge">${escapeHtml(kindLabel)}</span>`;
+    const desc = state.lang === "en" ? f.descriptionEn : f.descriptionJa;
+    bodyNote = desc
+      ? `<p class="card-sub" style="margin-top:6px;">${escapeHtml(desc)}</p>`
+      : "";
     const addr = f.address ? formatAddress(f.address, state.lang) : "";
     rowsHtml = `
+      ${f.buildingType && f.buildingType !== "yes" && title !== kindLabel ? `<dt>${escapeHtml(d.fields.buildingType)}</dt><dd>${escapeHtml(kindLabel)}</dd>` : ""}
       <dt>${escapeHtml(d.fields.height)}</dt>
       <dd>${f.heightM.toFixed(1)} m</dd>
       ${f.levels ? `<dt>${escapeHtml(d.fields.levels)}</dt><dd>${f.levels}</dd>` : ""}
+      ${f.areaM2 && f.areaM2 >= 10 ? `<dt>${escapeHtml(d.fields.footprint)}</dt><dd>~${f.areaM2.toLocaleString()} m²</dd>` : ""}
+      ${f.yearBuilt ? `<dt>${escapeHtml(d.fields.yearBuilt)}</dt><dd>${escapeHtml(f.yearBuilt)}</dd>` : ""}
       ${addr ? `<dt>${escapeHtml(d.fields.address)}</dt><dd>${escapeHtml(addr)}</dd>` : ""}
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>${escapeHtml(formatSourceKind(f.source, state.lang))}${f.osmId ? ` (#${f.osmId})` : ""}</dd>
@@ -852,7 +904,7 @@ export function renderCreditAndAboutModal(
       <h3 style="margin:12px 0 6px;font-family:var(--u-sans);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:var(--u-coral);">${escapeHtml(d.qaSummary)} (${escapeHtml(qa.releaseId)})</h3>
       <p style="font-family:var(--font-mono);font-size:11.5px;margin:0 0 12px;color:var(--u-mute);">
         passed=${qa.passed} | GCPs=${qa.gcpChecks.length} | maxDisp=${qa.maxGcpDisplacementPx}px (&le;${qa.gcpThresholdPx}px) |
-        voidPixels=${qa.waterIntegrity.voidPixels ?? 0} | features=${bundle.features.length} | POIs=${bundle.pois.length}
+        voidPixels=${qa.waterIntegrity.voidPixels ?? 0} | buildings=${bundle.buildings?.count ?? 0} | POIs=${bundle.pois.length}
       </p>
       <p class="card-sub" style="margin:0 0 8px;">${escapeHtml(notice)}</p>
       ${bundle.release.credits

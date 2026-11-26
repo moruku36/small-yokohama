@@ -14,6 +14,7 @@
     "render:tile": "npm.cmd --workspace @small-yokohama/pilot-builder run render:tile --",
     "build:pilot": "npm.cmd --workspace @small-yokohama/pilot-builder run build:pilot",
     "build:full": "npm.cmd --workspace @small-yokohama/pilot-builder run build:full",
+    "build:3d-layers": "node tools/build-yokohama-3d-layers.mjs",
     "build:vercel": "node tools/prepare-vercel-deploy.mjs",
     "dev": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run dev",
     "build": "node tools/ensure-pilot.mjs && npm.cmd --workspace @small-yokohama/viewer run build",

@@ -5,7 +5,11 @@ import {
   type SceneFeatureRecord,
 } from "@small-yokohama/core";
 import { Soundscape } from "./audio/Soundscape.js";
-import { loadCurrentRelease, type LoadedReleaseBundle } from "./data/releaseLoader.js";
+import {
+  loadCurrentRelease,
+  resolveFeatureById,
+  type LoadedReleaseBundle,
+} from "./data/releaseLoader.js";
 import { loadAmbientFixtures } from "./data/trafficFeed.js";
 import {
   fetchLiveTrainsApi,
@@ -542,6 +546,17 @@ async function bootstrap(): Promise<void> {
       state.selected = { kind: "landmark", landmark: lm };
       state.activeTab = null;
       mapViewer.panToLonLat(lm.lon, lm.lat, lm.elevationM);
+      refreshUi();
+    },
+    onSelectFeatureId: (fid: number) => {
+      stopTv(false);
+      state.following = false;
+      const feat = resolveFeatureById(bundle, fid);
+      if (!feat || feat.lon === undefined || feat.lat === undefined) return;
+      state.selected = { kind: "feature", feature: feat, lon: feat.lon, lat: feat.lat };
+      state.activeTab = null;
+      mapViewer.panToLonLat(feat.lon, feat.lat, Math.min(feat.heightM, 40));
+      mapViewer.updateState(state, resolvedFeed, resolvedTrains);
       refreshUi();
     },
     onSelectPoi: (poi: PoiRecord) => {

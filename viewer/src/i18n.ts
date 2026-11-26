@@ -67,6 +67,9 @@ export interface I18nDict {
     drift: string;
     height: string;
     levels: string;
+    buildingType: string;
+    yearBuilt: string;
+    footprint: string;
     address: string;
     source: string;
     berth: string;
@@ -182,6 +185,9 @@ const JA: I18nDict = {
     drift: "同期ずれ",
     height: "高さ",
     levels: "階数",
+    buildingType: "建物種別",
+    yearBuilt: "竣工年",
+    footprint: "建築面積",
     address: "住所",
     source: "データ出典",
     berth: "着岸岸壁",
@@ -308,6 +314,9 @@ const EN: I18nDict = {
     drift: "Sync drift",
     height: "Height",
     levels: "Levels",
+    buildingType: "Building type",
+    yearBuilt: "Year built",
+    footprint: "Footprint",
     address: "Address",
     source: "Source",
     berth: "Berth",
@@ -461,6 +470,71 @@ export function formatSurfaceKind(kind: SurfaceKind, lang: Lang): string {
   return lang === "en" ? "Feature" : "地物";
 }
 
+const BUILDING_TYPE_MAP: Record<string, { en: string; ja: string }> = {
+  yes: { en: "Building", ja: "建物" },
+  apartments: { en: "Apartments", ja: "集合住宅・マンション" },
+  residential: { en: "Residential", ja: "住宅" },
+  house: { en: "House", ja: "戸建住宅" },
+  detached: { en: "Detached House", ja: "戸建住宅" },
+  terrace: { en: "Townhouse", ja: "長屋・テラスハウス" },
+  dormitory: { en: "Dormitory", ja: "寮" },
+  commercial: { en: "Commercial Building", ja: "商業ビル" },
+  office: { en: "Office Building", ja: "オフィスビル" },
+  retail: { en: "Retail Building", ja: "店舗・商業施設" },
+  mall: { en: "Shopping Mall", ja: "大型商業施設" },
+  hotel: { en: "Hotel", ja: "ホテル" },
+  school: { en: "School", ja: "学校" },
+  university: { en: "University", ja: "大学施設" },
+  college: { en: "College", ja: "専門学校・大学" },
+  kindergarten: { en: "Kindergarten", ja: "幼稚園・保育園" },
+  hospital: { en: "Hospital / Medical", ja: "病院・医療施設" },
+  public: { en: "Public Building", ja: "公共施設" },
+  civic: { en: "Civic Building", ja: "公共・官庁施設" },
+  government: { en: "Government Building", ja: "官公庁" },
+  train_station: { en: "Station Building", ja: "駅舎" },
+  station: { en: "Station Building", ja: "駅舎" },
+  transportation: { en: "Transit Facility", ja: "交通施設" },
+  warehouse: { en: "Warehouse", ja: "倉庫" },
+  industrial: { en: "Industrial", ja: "工場・産業施設" },
+  parking: { en: "Parking Garage", ja: "立体駐車場" },
+  roof: { en: "Canopy / Roof", ja: "大屋根・キャノピー" },
+  shrine: { en: "Shrine", ja: "神社" },
+  temple: { en: "Temple", ja: "寺院" },
+  church: { en: "Church", ja: "教会" },
+  cathedral: { en: "Cathedral", ja: "大聖堂・教会" },
+  place_of_worship: { en: "Place of Worship", ja: "宗教施設" },
+  stadium: { en: "Stadium", ja: "スタジアム" },
+  sports_hall: { en: "Sports Hall", ja: "体育館・スポーツ施設" },
+  museum: { en: "Museum", ja: "博物館・美術館" },
+  library: { en: "Library", ja: "図書館" },
+  tower: { en: "Tower", ja: "タワー・塔" },
+  historic: { en: "Historic Building", ja: "歴史的建造物" },
+  ship: { en: "Museum Ship", ja: "記念艦・船" },
+  carport: { en: "Carport", ja: "カーポート" },
+  toilets: { en: "Restroom", ja: "公衆トイレ" },
+  ruins: { en: "Historic Ruins", ja: "遺構・跡" },
+  retret: { en: "Commercial Building", ja: "商業施設" },
+  garage: { en: "Garage", ja: "車庫" },
+  garages: { en: "Garages", ja: "車庫" },
+  shed: { en: "Shed", ja: "小建築" },
+  construction: { en: "Under Construction", ja: "建設中の建物" },
+  service: { en: "Utility Building", ja: "設備棟" },
+  kiosk: { en: "Kiosk", ja: "キオスク・売店" },
+  bridge: { en: "Covered Walkway", ja: "連絡通路・渡り廊下" },
+};
+
+export function formatBuildingType(buildingType: string | undefined, lang: Lang): string {
+  const key = (buildingType ?? "yes").trim().toLowerCase();
+  const hit = BUILDING_TYPE_MAP[key];
+  if (hit) return lang === "en" ? hit.en : hit.ja;
+  if (lang === "ja") return "建物";
+  return key
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export function formatDeckId(deckId: string, lang: Lang): string {
   if (deckId === "ground-road") {
     return lang === "en" ? "Street level" : "地上道路";
@@ -489,13 +563,53 @@ export function formatAddress(address: string, lang: Lang): string {
     [/（横浜海上防災基地）/g, " (Yokohama Maritime Disaster Response Base)"],
     [/神奈川県横浜市西区/g, "Nishi-ku, Yokohama, Kanagawa "],
     [/神奈川県横浜市中区/g, "Naka-ku, Yokohama, Kanagawa "],
+    [/神奈川県横浜市神奈川区/g, "Kanagawa-ku, Yokohama, Kanagawa "],
+    [/神奈川県横浜市保土ケ谷区/g, "Hodogaya-ku, Yokohama, Kanagawa "],
     [/神奈川横浜市中区/g, "Naka-ku, Yokohama, Kanagawa "],
     [/神奈川県横浜市/g, "Yokohama, Kanagawa "],
+    [/横浜市西区/g, "Nishi-ku, Yokohama "],
     [/横浜市中区/g, "Naka-ku, Yokohama "],
+    [/横浜市神奈川区/g, "Kanagawa-ku, Yokohama "],
+    [/横浜市保土ケ谷区/g, "Hodogaya-ku, Yokohama "],
+    [/西区/g, "Nishi-ku "],
+    [/中区/g, "Naka-ku "],
+    [/神奈川区/g, "Kanagawa-ku "],
     [/神奈川県/g, "Kanagawa, Japan"],
     [/みなとみらい/g, "Minato Mirai "],
     [/北仲通/g, "Kitanaka-dori "],
     [/海岸通/g, "Kaigan-dori "],
+    [/山下町/g, "Yamashita-cho "],
+    [/元町/g, "Motomachi "],
+    [/山手町/g, "Yamate-cho "],
+    [/野毛町/g, "Noge-cho "],
+    [/花咲町/g, "Hanasaki-cho "],
+    [/桜木町/g, "Sakuragicho "],
+    [/高島/g, "Takashima "],
+    [/金港町/g, "Kinko-cho "],
+    [/鶴屋町/g, "Tsuruya-cho "],
+    [/南幸/g, "Minamisaiwai "],
+    [/北幸/g, "Kitasaiwai "],
+    [/栄町/g, "Sakae-cho "],
+    [/戸部本町/g, "Tobe-honcho "],
+    [/戸部町/g, "Tobe-cho "],
+    [/石川町/g, "Ishikawacho "],
+    [/羽衣町/g, "Hagoromo-cho "],
+    [/尾上町/g, "Onoe-cho "],
+    [/真砂町/g, "Masago-cho "],
+    [/弁天通/g, "Benten-dori "],
+    [/相生町/g, "Aioi-cho "],
+    [/住吉町/g, "Sumiyoshi-cho "],
+    [/太田町/g, "Ota-machi "],
+    [/常盤町/g, "Tokiwa-cho "],
+    [/港町/g, "Minato-cho "],
+    [/日本大通/g, "Nihon-odori "],
+    [/伊勢佐木町/g, "Isezaki-cho "],
+    [/日ノ出町/g, "Hinodecho "],
+    [/宮川町/g, "Miyagawa-cho "],
+    [/平沼/g, "Hiranuma "],
+    [/岡野/g, "Okano "],
+    [/西神奈川/g, "Nishi-Kanagawa "],
+    [/反町/g, "Tammachi "],
     [/新港/g, "Shinko "],
     [/本町/g, "Honcho "],
     [/馬車道/g, "Bashamichi "],
@@ -505,6 +619,8 @@ export function formatAddress(address: string, lang: Lang): string {
     [/四丁目/g, "4-chome "],
     [/五丁目/g, "5-chome "],
     [/六丁目/g, "6-chome "],
+    [/七丁目/g, "7-chome "],
+    [/八丁目/g, "8-chome "],
     [/1丁目/g, "1-chome "],
     [/2丁目/g, "2-chome "],
     [/3丁目/g, "3-chome "],

@@ -2,6 +2,7 @@ import { wgs84ToImage, type PoiRecord } from "@small-yokohama/core";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
 import type { ResolvedTrain } from "../data/trainFeed.js";
 import type { ResolvedFeedState } from "../data/vehicleFeed.js";
+import { formatBuildingType, formatSurfaceKind } from "../i18n.js";
 import type { ViewerState } from "../state.js";
 
 export interface ViewportImageBounds {
@@ -161,6 +162,26 @@ export class LabelLayer {
         py: img.py,
         label: `${tr.code} ${state.lang === "en" ? tr.lineNameEn : tr.lineNameJa}`,
         id: `tr:${tr.id}`,
+      };
+    }
+    if (sel.kind === "feature") {
+      const f = sel.feature;
+      const label =
+        (state.lang === "en" ? f.nameEn : f.nameJa) ||
+        (f.buildingType
+          ? formatBuildingType(f.buildingType, state.lang)
+          : formatSurfaceKind(f.surfaceKind, state.lang));
+      const img = wgs84ToImage(
+        bundle.camera,
+        sel.lon,
+        sel.lat,
+        Math.min(f.heightM, 40) + 2,
+      );
+      return {
+        px: img.px,
+        py: img.py,
+        label,
+        id: `feat:${f.featureId}`,
       };
     }
     return null;
