@@ -74,7 +74,7 @@ import {
   type UiHandlers,
 } from "./ui/renderUi.js";
 import { CloudIntro } from "./viewer/CloudIntro.js";
-import { MapViewer } from "./viewer/MapViewer.js";
+import { MapViewer, type MapLoadState } from "./viewer/MapViewer.js";
 import { metersAcrossToZoom, zoomToMetersAcross } from "./viewer/geoView.js";
 import {
   SKY_PRESETS,
@@ -104,6 +104,9 @@ async function bootstrap(): Promise<void> {
   const toastEl = document.getElementById("toast");
   const cardEl = document.getElementById("card")!;
   const statusEl = document.getElementById("status")!;
+  const mapErrorEl = document.getElementById("map-error")!;
+  const mapErrorTextEl = document.getElementById("map-error-text")!;
+  const retryMapButton = document.getElementById("retry-map")!;
   const sqEl = document.getElementById("sq")!;
   const minimapEl = document.getElementById("minimap");
   const creditEl = document.getElementById("credit")!;
@@ -165,6 +168,8 @@ async function bootstrap(): Promise<void> {
   );
 
   const sessionStartDate = new Date();
+  // Weather enriches the map, but the base drawing must not wait for either endpoint.
+  const initialWeather = fetchYokohamaWeather();
   let [
     currentSnapshot,
     { railBundle, streetlights },
@@ -172,7 +177,6 @@ async function bootstrap(): Promise<void> {
     liveBusesApi,
     livePlanesApi,
     ambient,
-    liveWeather,
   ] = await Promise.all([
     fetchSnapshotForPreset(bundle.baseReleaseUrl, state.feedPreset, state.liveEndpoint),
     loadRailBundle(bundle.baseReleaseUrl),
@@ -180,10 +184,9 @@ async function bootstrap(): Promise<void> {
     fetchLiveBusesApi(state.liveEndpoint),
     fetchLivePlanesApi(),
     loadAmbientFixtures(bundle.baseReleaseUrl),
-    fetchYokohamaWeather(),
   ]);
 
-  let currentWeatherPayload: LiveWeatherPayload | null = liveWeather;
+  let currentWeatherPayload: LiveWeatherPayload | null = null;
   const resolveCurrentWeather = () => {
     const d = getDict(state.lang);
     const sun = computeYokohamaSun(getSunDateForHourJst(state.sunHourJst));
@@ -229,6 +232,7 @@ async function bootstrap(): Promise<void> {
   const labelLayer = new LabelLayer();
   const transitLayer = new TransitBadgeLayer();
   let mapViewer: MapViewer;
+  let mapLoadState: MapLoadState = "loading";
   let minimap: Minimap | null = null;
   let tvIndex = 0;
   let tvTimerId = 0;
@@ -385,10 +389,38 @@ async function bootstrap(): Promise<void> {
     }
   };
 
+  const updateStatus = (weatherStatusText = resolveCurrentWeather().statusText) => {
+    const d = getDict(state.lang);
+    statusEl.hidden = mapLoadState === "failed";
+    if (mapLoadState === "failed") {
+      if (statusEl.textContent) statusEl.textContent = "";
+      if (mapErrorTextEl.textContent !== d.mapLoadError) mapErrorTextEl.textContent = d.mapLoadError;
+      if (retryMapButton.textContent !== d.retryMap) retryMapButton.textContent = d.retryMap;
+    } else if (mapLoadState === "loading") {
+      const html = `<span class="g loading">${d.loadingCity}</span>`;
+      if (statusEl.innerHTML !== html) statusEl.innerHTML = html;
+    } else {
+      renderStatus(statusEl, state, resolvedFeed, resolvedTrains, weatherStatusText, resolvedPlanes);
+    }
+    mapErrorEl.hidden = mapLoadState !== "failed";
+  };
+
+  const refreshDrop = () => renderDrop(
+    dropEl,
+    state,
+    bundle,
+    resolvedFeed,
+    handlers,
+    mapViewer.hasWebGLOverlay,
+    resolvedTrains,
+    resolvedPlanes,
+    resolvedAirCabins,
+  );
+
   const refreshUi = () => {
     syncDocumentPrefs();
-    renderBar(barEl, state, handlers);
-    renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains, resolvedPlanes, resolvedAirCabins);
+    renderBar(barEl, state, handlers, mapViewer.hasWebGLOverlay);
+    refreshDrop();
     const drift = mapViewer ? mapViewer.measureMaxMarkerDriftCssPx() : 0;
     renderCard(
       cardEl,
@@ -402,7 +434,7 @@ async function bootstrap(): Promise<void> {
       railBundle,
     );
     const wState = resolveCurrentWeather();
-    renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
+    updateStatus(wState.statusText);
     mapViewer?.setWeatherVisual(
       wState.rainIntensity,
       wState.windSlope,
@@ -563,7 +595,7 @@ async function bootstrap(): Promise<void> {
     },
     onSearchQuery: (q: string) => {
       state.searchQuery = q;
-      renderDrop(dropEl, state, bundle, resolvedFeed, handlers, resolvedTrains, resolvedPlanes, resolvedAirCabins);
+      refreshDrop();
     },
     onToggleTv: () => {
       if (state.tvMode) {
@@ -823,6 +855,19 @@ async function bootstrap(): Promise<void> {
       state.cameraView = { centerImgX, centerImgY, zoom };
       syncViewportOverlays();
     },
+    onMapLoadStateChange: (loadState) => {
+      mapLoadState = loadState;
+      updateStatus();
+      if (loadState !== "loading" && cloudIntro) {
+        const intro = cloudIntro;
+        cloudIntro = null;
+        if (loadState === "ready") {
+          void mapViewer.playIntro(2600, (t) => intro.setProgress(t)).finally(() => intro.finish());
+        } else {
+          intro.finish();
+        }
+      }
+    },
     onTogglePlay: handlers.onTogglePlay,
     onUserPan: stopFollowing,
     onHover: (pick, x, y) => {
@@ -872,14 +917,23 @@ async function bootstrap(): Promise<void> {
     resolvedAirCabins,
   );
   refreshUi();
+  retryMapButton.addEventListener("click", () => mapViewer.openMap(true));
+  mapViewer.openMap();
 
-  if (cloudIntro) {
-    const intro = cloudIntro;
-    void mapViewer
-      .whenOpen()
-      .then(() => mapViewer.playIntro(2600, (t) => intro.setProgress(t)))
-      .finally(() => intro.finish());
-  }
+  const applyLiveWeather = (weather: LiveWeatherPayload | null) => {
+    if (!weather) return;
+    currentWeatherPayload = weather;
+    const wState = resolveCurrentWeather();
+    mapViewer.setWeatherVisual(
+      wState.rainIntensity,
+      wState.windSlope,
+      wState.cloudCover,
+      wState.mistIntensity,
+      wState.windSpeedKmh,
+    );
+    updateStatus(wState.statusText);
+  };
+  void initialWeather.then(applyLiveWeather);
 
   window.addEventListener("keydown", (e) => {
     if (
@@ -994,46 +1048,19 @@ async function bootstrap(): Promise<void> {
         resolvedPlanes = resolvePlanesForFrame(livePlanesApi, state.simTimeSec);
         mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
         syncTransitBadges();
-        renderStatus(
-          statusEl,
-          state,
-          resolvedFeed,
-          resolvedTrains,
-          resolveCurrentWeather().statusText,
-          resolvedPlanes,
-        );
+        updateStatus();
       }
     });
   }, 15_000);
 
   window.setInterval(() => {
     if (document.hidden) return;
-    void fetchYokohamaWeather().then((w) => {
-      if (w) {
-        currentWeatherPayload = w;
-        const wState = resolveCurrentWeather();
-        mapViewer.setWeatherVisual(
-          wState.rainIntensity,
-          wState.windSlope,
-          wState.cloudCover,
-          wState.mistIntensity,
-          wState.windSpeedKmh,
-        );
-        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
-      }
-    });
+    void fetchYokohamaWeather().then(applyLiveWeather);
   }, 600_000);
 
   window.setInterval(() => {
     if (document.hidden) return;
-    renderStatus(
-      statusEl,
-      state,
-      resolvedFeed,
-      resolvedTrains,
-      resolveCurrentWeather().statusText,
-      resolvedPlanes,
-    );
+    updateStatus();
     if (state.sunHourJst === null) {
       const liveIsNight = isNightAltitude(
         computeYokohamaSun(getSunDateForHourJst(null)).altitudeDeg,
@@ -1169,7 +1196,7 @@ async function bootstrap(): Promise<void> {
             activeRideCar,
           );
         }
-        renderStatus(statusEl, state, resolvedFeed, resolvedTrains, wState.statusText, resolvedPlanes);
+        updateStatus(wState.statusText);
       }
     }
 

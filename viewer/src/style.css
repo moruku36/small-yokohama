@@ -419,6 +419,53 @@ button {
   opacity: 0;
 }
 
+/* The localized error and retry action replace the viewer's default message. */
+.osd-container .openseadragon-message {
+  display: none;
+}
+
+.map-error {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 32;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 16px 24px;
+  border: 1px solid var(--u-line);
+  border-radius: 4px;
+  background: var(--u-paper);
+  color: var(--u-text);
+  box-shadow: 0 12px 30px -16px var(--u-shadow);
+  text-align: center;
+}
+
+.map-error p {
+  margin: 0 0 12px;
+}
+
+.map-error button {
+  padding: 6px 12px;
+  border: 1px solid var(--u-line);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.bar .tools button:disabled,
+.layer-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.layers-notice {
+  margin: 0 0 8px;
+  color: var(--u-text);
+}
+
 /* Small SF style paper tag with vertical stem */
 .map-label {
   position: absolute;

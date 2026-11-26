@@ -62,6 +62,8 @@ export type MapPick =
   | { kind: "landmark"; landmark: Landmark }
   | { kind: "feature"; feature: SceneFeatureRecord; lon: number; lat: number };
 
+export type MapLoadState = "loading" | "ready" | "failed";
+
 export interface MapViewerCallbacks {
   onSelectVehicle: (rv: ResolvedVehicle) => void;
   onSelectTrain: (tr: ResolvedTrain) => void;
@@ -73,6 +75,7 @@ export interface MapViewerCallbacks {
   onSelectPortCall: (pc: AnimatedPortCall) => void;
   onClearSelection: () => void;
   onViewChanged: (centerImgX: number, centerImgY: number, zoom: number) => void;
+  onMapLoadStateChange: (state: MapLoadState) => void;
   onTogglePlay: () => void;
   onUserInteract?: () => void;
   /** The visitor started dragging the map (not a click, not a zoom): ends following. */
@@ -86,13 +89,14 @@ const PIN_SELECTOR = ".map-label, .search-pin, .bus-pill, .boat-pill, .train-pil
 
 export class MapViewer {
   private readonly osd: OpenSeadragon.Viewer;
-  private readonly glOverlay: WebGLOverlay;
+  private readonly glOverlay: WebGLOverlay | null;
   private readonly camera: CameraManifest;
   private readonly isMobile: boolean;
   private readonly inputRoot: HTMLElement;
   private readonly skyTintEl: HTMLElement | null;
   private readonly veilEl: HTMLElement | null;
   private currentVariant: MapVariant;
+  private pendingCameraView: ViewerState["cameraView"] | null = null;
   private feedState: ResolvedFeedState | null = null;
   private trainsState: readonly ResolvedTrain[] = [];
   private planesState: readonly ResolvedPlane[] = [];
@@ -136,18 +140,22 @@ export class MapViewer {
     this.inputRoot = osdElement.parentElement ?? osdElement;
     this.skyTintEl = document.getElementById("sky-tint");
     this.veilEl = document.getElementById("veil");
-    this.glOverlay = new WebGLOverlay(glCanvas, bundle.camera, bundle.depthTiles);
+    try {
+      this.glOverlay = new WebGLOverlay(glCanvas, bundle.camera, bundle.depthTiles);
+    } catch (err) {
+      console.warn("Map overlays are unavailable; using the base map", err);
+      this.glOverlay = null;
+      glCanvas.hidden = true;
+    }
 
     const isFull = isFullYokohamaCamera(bundle.camera);
     this.isMobile =
       typeof window !== "undefined" &&
       ((window.matchMedia?.("(pointer: coarse)").matches ?? false) || window.innerWidth <= 700);
 
-    const dziUrl = `${bundle.baseReleaseUrl}/${bundle.release.variants[state.variant].dziPath}`;
     this.osd = OpenSeadragon({
       element: osdElement,
-      tileSources: dziUrl,
-      drawer: this.isMobile ? "canvas" : ["webgl", "canvas"],
+      drawer: this.isMobile || !this.glOverlay ? "canvas" : ["webgl", "canvas"],
       mouseNavEnabled: false,
       maxImageCacheCount: this.isMobile ? 60 : 250,
       imageLoaderLimit: this.isMobile ? 4 : 8,
@@ -190,10 +198,20 @@ export class MapViewer {
 
     this.osd.addHandler("open", () => {
       this.updateViewportMinZoom(false);
-      this.applyCameraView(this.state.cameraView, true);
+      this.applyCameraView(this.pendingCameraView ?? this.state.cameraView, true);
       this.osd.viewport?.applyConstraints(true);
+      this.pendingCameraView = null;
+      this.glCanvas.hidden = !this.glOverlay;
       this.renderOverlayFrame(true);
       this.dismissVeil();
+      this.syncCameraViewState();
+      this.callbacks.onMapLoadStateChange("ready");
+    });
+    this.osd.addHandler("open-failed", (event) => {
+      console.warn("Failed to open the map drawing", event.message);
+      this.pendingCameraView = null;
+      this.dismissVeil();
+      this.callbacks.onMapLoadStateChange("failed");
     });
 
     const syncHandler = () => {
@@ -217,13 +235,28 @@ export class MapViewer {
     this.renderOverlayFrame(true);
   }
 
+  get hasWebGLOverlay(): boolean {
+    return this.glOverlay !== null;
+  }
+
+  openMap(retry = false): void {
+    this.pendingCameraView = { ...this.state.cameraView };
+    this.glCanvas.hidden = true;
+    this.callbacks.onMapLoadStateChange("loading");
+    const path = this.bundle.release.variants[this.currentVariant].dziPath;
+    const url = new URL(`${this.bundle.baseReleaseUrl}/${path}`, window.location.href);
+    // A cached 404 must not prevent retrying after the release is restored.
+    if (retry) url.searchParams.set("retry", String(Date.now()));
+    this.osd.open({ tileSource: url.href });
+  }
+
   setStreetlights(points: Float32Array | null): void {
-    this.glOverlay.setStreetlights(points);
+    this.glOverlay?.setStreetlights(points);
     this.renderOverlayFrame(false, false);
   }
 
   setPedestrians(points: Float32Array | null): void {
-    this.glOverlay.setPedestrians(points);
+    this.glOverlay?.setPedestrians(points);
     this.renderOverlayFrame(false, false);
   }
 
@@ -996,15 +1029,7 @@ export class MapViewer {
 
     if (nextState.variant !== this.currentVariant) {
       this.currentVariant = nextState.variant;
-      const savedView = { ...nextState.cameraView };
-      const dziUrl = `${this.bundle.baseReleaseUrl}/${this.bundle.release.variants[nextState.variant].dziPath}`;
-      this.osd.addOnceHandler("open", () => {
-        this.updateViewportMinZoom(false);
-        this.applyCameraView(savedView, true);
-        this.osd.viewport?.applyConstraints(true);
-        this.renderOverlayFrame(true);
-      });
-      this.osd.open({ tileSource: dziUrl });
+      this.openMap();
     }
 
     const lightingChanged =
@@ -1103,7 +1128,7 @@ export class MapViewer {
   }
 
   private syncCameraViewState(): void {
-    if (!this.osd.viewport) return;
+    if (!this.osd.viewport || this.pendingCameraView || !this.osd.isOpen()) return;
     const centerVp = this.osd.viewport.getCenter(true);
     const centerImg = this.osd.viewport.viewportToImageCoordinates(centerVp);
     const zoom = this.osd.viewport.getZoom(true);
@@ -1116,7 +1141,7 @@ export class MapViewer {
     cssWidth: number;
     cssHeight: number;
   } | null {
-    if (!this.osd.viewport) return null;
+    if (!this.osd.viewport || !this.osd.isOpen()) return null;
     const rect = this.osdElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
 
@@ -1160,14 +1185,15 @@ export class MapViewer {
 
   renderOverlayFrame(immediateSky = false, updateSky = true): void {
     if (this.isDestroyed) return;
-    const sunDate = getSunDateForHourJst(this.state.sunHourJst);
     const { altitudeDeg, grade } = this.computeCurrentSky();
     if (updateSky || immediateSky) {
       this.applySkyFilter(altitudeDeg, grade, immediateSky);
     }
 
+    if (!this.glOverlay) return;
     const bounds = this.getViewportImageBounds();
     if (!bounds) return;
+    const sunDate = getSunDateForHourJst(this.state.sunHourJst);
 
     const selectedVehicleId =
       this.state.selected?.kind === "vehicle" ? this.state.selected.vehicle.entityId : null;
@@ -1303,11 +1329,11 @@ export class MapViewer {
 
   /** What is drawn at a point of the viewer element: sky & moving things first, then the building under it. */
   pickAt(viewerPos: OpenSeadragon.Point): MapPick | null {
-    if (!this.osd.viewport) return null;
+    if (!this.osd.viewport || !this.osd.isOpen()) return null;
     const imgPt = this.osd.viewport.viewerElementToImageCoordinates(viewerPos);
 
     // 0a. Check airborne aircraft first (highest layer)
-    if (this.state.showPlanes && this.planesState.length > 0) {
+    if (this.glOverlay && this.state.showPlanes && this.planesState.length > 0) {
       for (const p of this.planesState) {
         const pImg = localToImage(
           this.camera,
@@ -1323,7 +1349,7 @@ export class MapViewer {
     }
 
     // 0b. Check YOKOHAMA AIR CABIN gondolas
-    if (this.state.showAirCabin && this.airCabinsState.length > 0) {
+    if (this.glOverlay && this.state.showAirCabin && this.airCabinsState.length > 0) {
       for (const cabin of this.airCabinsState) {
         const gImg = localToImage(
           this.camera,
@@ -1339,7 +1365,7 @@ export class MapViewer {
     }
 
     // 1. Check vehicles first
-    if (this.feedState && this.state.showBuses) {
+    if (this.glOverlay && this.feedState && this.state.showBuses) {
       for (const rv of this.feedState.vehicles) {
         const vImg = localToImage(
           this.camera,
@@ -1355,7 +1381,7 @@ export class MapViewer {
     }
 
     // 1b. Check railway trains (hit test across every car in consist)
-    if (this.state.showTrains && this.trainsState.length > 0) {
+    if (this.glOverlay && this.state.showTrains && this.trainsState.length > 0) {
       for (const tr of this.trainsState) {
         for (const car of tr.cars) {
           const cImg = localToImage(
@@ -1402,7 +1428,7 @@ export class MapViewer {
     }
 
     // 2. Check scheduled port calls & harbor vessels
-    if (this.feedState && this.state.showBoats) {
+    if (this.glOverlay && this.feedState && this.state.showBoats) {
       for (const pc of this.feedState.portCalls) {
         const pcImg = localToImage(
           this.camera,
@@ -1525,14 +1551,6 @@ export class MapViewer {
       vp.panTo(targetCenter, true);
       if (isFull) vp.applyConstraints(true);
       window.requestAnimationFrame(frame);
-    });
-  }
-
-  /** Resolves once the drawing has opened (at once if it already has). */
-  whenOpen(): Promise<void> {
-    if (this.osd.world.getItemCount() > 0) return Promise.resolve();
-    return new Promise((resolve) => {
-      this.osd.addOnceHandler("open", () => resolve());
     });
   }
 
