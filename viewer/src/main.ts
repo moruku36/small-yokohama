@@ -134,15 +134,26 @@ async function bootstrap(): Promise<void> {
     document.getElementById("veil")?.setAttribute("hidden", "");
   }
 
-  let bundle: LoadedReleaseBundle;
-  try {
-    bundle = await loadCurrentRelease();
-  } catch (err) {
+  const showFatalInitError = (err: unknown) => {
+    console.error(err);
     cloudIntro?.finish();
+    document.getElementById("veil")?.setAttribute("hidden", "");
     const msg = err instanceof Error ? err.message : String(err);
-    barEl.innerHTML = `<span class="title">Small Yokohama — Failed to load release: ${msg}</span>`;
-    return;
-  }
+    barEl.textContent = "";
+    const titleEl = document.createElement("span");
+    titleEl.className = "title";
+    titleEl.textContent = `Small Yokohama — Failed to initialize: ${msg}`;
+    barEl.appendChild(titleEl);
+    statusEl.textContent = "";
+    const statusSpan = document.createElement("span");
+    statusSpan.className = "g";
+    statusSpan.textContent =
+      bootLang === "en" ? "Initialization error" : "初期化エラーが発生しました";
+    statusEl.appendChild(statusSpan);
+  };
+
+  try {
+    const bundle = await loadCurrentRelease();
 
   const prefersReducedMotion =
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -1172,7 +1183,10 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  rafId = window.requestAnimationFrame(tick);
+    rafId = window.requestAnimationFrame(tick);
+  } catch (err) {
+    showFatalInitError(err);
+  }
 }
 
 void bootstrap();

@@ -132,7 +132,7 @@ void main() {
     float clearSun = clamp(1.0 - u_cloudCover * 0.65, 0.15, 1.0) * (1.0 - u_mistIntensity * 0.75);
     if (u_nightIntensity < 0.65) {
       float glint = pow(max(0.0, ripple), 5.0) * smoothstep(0.45, 0.82, patchMask) * clearSun;
-      float golden = smoothstep(22.0, 1.0, u_sunAltitudeDeg);
+      float golden = 1.0 - smoothstep(1.0, 22.0, u_sunAltitudeDeg);
       vec3 sunCol = mix(vec3(0.92, 0.98, 1.0), vec3(1.0, 0.84, 0.55), golden);
       float dayA = glint * (1.0 - u_nightIntensity) * (0.20 + 0.12 * golden);
       colOut = blendOver(colOut, vec4(sunCol, clamp(dayA, 0.0, 0.28)));
@@ -180,7 +180,7 @@ void main() {
     float fogDensity = smoothstep(0.28, 0.80, wisp * 0.72 + fine * 0.28);
     float waterBias = surfaceKind == 1 ? 1.18 : (surfaceKind == 4 ? 0.62 : 0.88);
     float fogAlpha = clamp(fogDensity * u_mistIntensity * waterBias * 0.54, 0.0, 0.58);
-    vec3 dayFog = mix(vec3(0.84, 0.88, 0.92), vec3(0.92, 0.82, 0.74), smoothstep(18.0, 0.0, u_sunAltitudeDeg));
+    vec3 dayFog = mix(vec3(0.84, 0.88, 0.92), vec3(0.92, 0.82, 0.74), 1.0 - smoothstep(0.0, 18.0, u_sunAltitudeDeg));
     vec3 fogRgb = mix(dayFog, vec3(0.24, 0.31, 0.40), u_nightIntensity);
     colOut = blendOver(colOut, vec4(fogRgb, fogAlpha));
   }
@@ -1069,7 +1069,7 @@ float sampleDigit7(vec2 p, int digit) {
   if ((mask & 16) != 0) d = min(d, cSegDist(p, vec2(-hw, 0.0), vec2(-hw, -hh)));
   if ((mask & 32) != 0) d = min(d, cSegDist(p, vec2(-hw, hh), vec2(-hw, 0.0)));
   if ((mask & 64) != 0) d = min(d, cSegDist(p, vec2(-hw, 0.0), vec2(hw, 0.0)));
-  return smoothstep(0.0085, 0.0025, d);
+  return 1.0 - smoothstep(0.0025, 0.0085, d);
 }
 
 vec3 cosmoPalette(float theta, float r, float t, float mode) {
@@ -1127,26 +1127,26 @@ void main() {
   vec3 ledCol = cosmoPalette(theta, r, u_simTimeSec, u_showMode);
 
   // Support A-frame legs (visible in lower half)
-  float dLegL = cSegDist(p, vec2(-0.08, 0.02), vec2(-0.50, -0.96), 0.022);
-  float dLegR = cSegDist(p, vec2(0.08, 0.02), vec2(0.50, -0.96), 0.022);
-  float legMask = smoothstep(0.015, 0.0, min(dLegL, dLegR) - 0.016);
+  float dLegL = cSegDist(p, vec2(-0.08, 0.02), vec2(-0.50, -0.96));
+  float dLegR = cSegDist(p, vec2(0.08, 0.02), vec2(0.50, -0.96));
+  float legMask = 1.0 - smoothstep(0.016, 0.031, min(dLegL, dLegR));
 
   // Outer & inner wheel truss rings + 24 radial spokes + 24 gondolas
-  float outerRing = smoothstep(0.026, 0.010, abs(r - 0.90));
-  float innerRing = smoothstep(0.020, 0.008, abs(r - 0.80));
-  float hubRim = smoothstep(0.018, 0.006, abs(r - 0.25));
+  float outerRing = 1.0 - smoothstep(0.010, 0.026, abs(r - 0.90));
+  float innerRing = 1.0 - smoothstep(0.008, 0.020, abs(r - 0.80));
+  float hubRim = 1.0 - smoothstep(0.006, 0.018, abs(r - 0.25));
   float spokeAng = fract((rotTheta / 6.2831853) * 24.0);
   float spokeDist = abs(spokeAng - 0.5) * (6.2831853 / 24.0) * max(r, 0.15);
-  float spokes = smoothstep(0.013, 0.004, spokeDist) * step(0.24, r) * step(r, 0.91);
+  float spokes = (1.0 - smoothstep(0.004, 0.013, spokeDist)) * step(0.24, r) * step(r, 0.91);
 
   // Gondola pods hanging around the 0.94 rim radius
   float gongCell = floor((rotTheta / 6.2831853) * 24.0 + 0.5);
   float gongAng = gongCell * (6.2831853 / 24.0) + u_wheelAngleRad;
   vec2 gongCenter = vec2(cos(gongAng), sin(gongAng)) * 0.955;
-  float gondolas = smoothstep(0.032, 0.016, length((p - gongCenter) * vec2(1.15, 0.95)));
+  float gondolas = 1.0 - smoothstep(0.016, 0.032, length((p - gongCenter) * vec2(1.15, 0.95)));
 
   // Hub clock casing (r <= 0.24) + live 7-segment JST digits (HH:MM)
-  float hubMask = smoothstep(0.245, 0.232, r);
+  float hubMask = 1.0 - smoothstep(0.232, 0.245, r);
   float digitsMask = 0.0;
   if (r < 0.24) {
     digitsMask = max(digitsMask, sampleDigit7(p - vec2(-0.115, 0.0), u_clockDigits.x));
@@ -1154,8 +1154,8 @@ void main() {
     digitsMask = max(digitsMask, sampleDigit7(p - vec2(0.048, 0.0), u_clockDigits.z));
     digitsMask = max(digitsMask, sampleDigit7(p - vec2(0.115, 0.0), u_clockDigits.w));
     if (u_colonOn > 0.5) {
-      float dotTop = smoothstep(0.011, 0.004, length(p - vec2(0.0, 0.018)));
-      float dotBot = smoothstep(0.011, 0.004, length(p - vec2(0.0, -0.018)));
+      float dotTop = 1.0 - smoothstep(0.004, 0.011, length(p - vec2(0.0, 0.018)));
+      float dotBot = 1.0 - smoothstep(0.004, 0.011, length(p - vec2(0.0, -0.018)));
       digitsMask = max(digitsMask, max(dotTop, dotBot));
     }
   }

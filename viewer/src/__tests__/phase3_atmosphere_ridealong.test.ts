@@ -144,4 +144,62 @@ describe("Phase 3: Ride Along, Cosmo Clock 21, walking umbrellas, water shimmer 
     expect(COSMO_FRAG).toContain("u_clockDigits");
     expect(COSMO_FRAG).toContain("sevenSegMask");
   });
+
+  it("ensures COSMO_FRAG and OVERLAY_FRAG have valid GLSL call arity and ascending smoothstep bounds", () => {
+    const extractCallArgs = (source: string, fnName: string, skipDecl = false): string[][] => {
+      const calls: string[][] = [];
+      const re = new RegExp(`\\b${fnName}\\s*\\(`, "g");
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(source)) !== null) {
+        if (skipDecl) {
+          const before = source.slice(Math.max(0, match.index - 16), match.index);
+          if (/\b(?:float|int|vec2|vec3|vec4|void)\s+$/.test(before)) continue;
+        }
+        let idx = match.index + match[0].length;
+        let depth = 1;
+        let cur = "";
+        const args: string[] = [];
+        while (idx < source.length && depth > 0) {
+          const ch = source[idx]!;
+          if (ch === "(") {
+            depth++;
+            cur += ch;
+          } else if (ch === ")") {
+            depth--;
+            if (depth === 0) {
+              if (cur.trim()) args.push(cur.trim());
+              break;
+            }
+            cur += ch;
+          } else if (ch === "," && depth === 1) {
+            args.push(cur.trim());
+            cur = "";
+          } else {
+            cur += ch;
+          }
+          idx++;
+        }
+        calls.push(args);
+      }
+      return calls;
+    };
+
+    const segCalls = extractCallArgs(COSMO_FRAG, "cSegDist", true);
+    expect(segCalls.length).toBeGreaterThanOrEqual(9);
+    for (const args of segCalls) {
+      expect(args).toHaveLength(3);
+    }
+
+    const numLiteral = /^-?\d+(?:\.\d+)?$/;
+    for (const src of [COSMO_FRAG, OVERLAY_FRAG]) {
+      const ssCalls = extractCallArgs(src, "smoothstep");
+      expect(ssCalls.length).toBeGreaterThan(0);
+      for (const args of ssCalls) {
+        expect(args).toHaveLength(3);
+        if (numLiteral.test(args[0]!) && numLiteral.test(args[1]!)) {
+          expect(Number(args[0])).toBeLessThan(Number(args[1]));
+        }
+      }
+    }
+  });
 });
