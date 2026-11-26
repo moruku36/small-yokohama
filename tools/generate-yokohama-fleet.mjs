@@ -1083,12 +1083,10 @@ function loadDepthTiles(releaseDir, cam) {
         if (k === SURFACE_KIND_MAP.ROAD) return true;
       }
     }
-    // 3x3 half-res pixel buffer: reject WATER (unless on deck/quay center) and building interiors
-    let bldgHits = 0;
+    // 3x3 half-res pixel buffer: reject WATER (unless on deck/quay center)
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         const k = sampleKind(px + dx * step, py + dy * step);
-        if (k === SURFACE_KIND_MAP.BUILDING) bldgHits++;
         if (
           k === SURFACE_KIND_MAP.WATER &&
           !(
@@ -1098,6 +1096,15 @@ function loadDepthTiles(releaseDir, cam) {
         ) {
           return true;
         }
+      }
+    }
+    // 5x5 half-res pixel buffer (~+-4 image px): keep people's feet (and the
+    // ~6.5px-tall illustrated body above them) clear of painted walls, so bodies
+    // never overlap a building face even where data and paint agree
+    let bldgHits = 0;
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (sampleKind(px + dx * step, py + dy * step) === SURFACE_KIND_MAP.BUILDING) bldgHits++;
       }
     }
     if (bldgHits >= 2) return true;
@@ -1646,6 +1653,42 @@ function buildAmbientTraffic(cam, osm, previewPng, scaleToPreview) {
   };
 }
 
+/**
+ * Paint-truth roof exclusions in image-pixel space (tied to the full-yokohama-v1
+ * camera: 15488x5888). The illustration draws the two Red Brick warehouses
+ * bigger than their OSM/depth footprints, so data-only checks let people stand
+ * on the painted roofs. Polygons are convex hulls of the painted dark roof
+ * areas traced from the illustrated tiles (+12px pad); the courtyard between
+ * the warehouses stays open.
+ */
+const ROOF_EXCLUSION_POLYS = [
+  [
+    [5494, 4107], [5671, 3884], [5673, 3882], [5717, 3853], [5742, 3848],
+    [5748, 3848], [5759, 3856], [5775, 3872], [5795, 3919], [5742, 3990],
+    [5614, 4129], [5563, 4185], [5542, 4184], [5497, 4130],
+  ],
+  [
+    [5650, 4173], [5816, 3968], [5878, 3909], [5887, 3903], [5912, 3894],
+    [5918, 3894], [5923, 3898], [5972, 3949], [5972, 3951], [5964, 3961],
+    [5774, 4195], [5741, 4231], [5735, 4237], [5722, 4237], [5710, 4232],
+    [5665, 4196], [5663, 4194],
+  ],
+];
+
+const insideImagePoly = (poly, x, y) => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0];
+    const yi = poly[i][1];
+    const xj = poly[j][0];
+    const yj = poly[j][1];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+};
+
 function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scaleToPreview, buildingOcclusion, walkable) {
   const rng = mulberry32(20261125);
   const grid = new Set();
@@ -1662,6 +1705,10 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
       img.py > cam.imageHeightPx - 56
     ) {
       return false;
+    }
+    // never stand on a painted roof the data footprints miss (see ROOF_EXCLUSION_POLYS)
+    for (const poly of ROOF_EXCLUSION_POLYS) {
+      if (insideImagePoly(poly, img.px, img.py)) return false;
     }
     const cell = `${Math.floor(img.px / 10)}:${Math.floor(img.py / 10)}`;
     if (grid.has(cell)) return false;
