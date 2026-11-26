@@ -1689,7 +1689,73 @@ const insideImagePoly = (poly, x, y) => {
   return inside;
 };
 
-function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scaleToPreview, buildingOcclusion, walkable) {
+/**
+ * Paint-truth tree-canopy guard. The depth/surface tiles model vegetation as
+ * flat ground, so data-only checks happily place people inside painted tree
+ * crowns. A candidate is rejected when its feet stand on dark-green canopy
+ * paint AND most of the 10px ring around it is canopy too (buried in foliage).
+ * People at a crown's edge (feet on grass, ring half open) are kept, so groves
+ * keep their natural fringe crowds.
+ */
+const isCanopyPaint = (r, g, b) => g > r + 14 && g > b + 14 && Math.max(r, g, b) < 150;
+
+function buildCanopyGuard(rootDir) {
+  const tileDir = path.join(
+    rootDir,
+    "viewer",
+    "public",
+    "releases",
+    "full-yokohama-v1",
+    "illustrated_files",
+    "14",
+  );
+  // "col_row" -> Uint8Array(512*512) canopy mask (1 bit/px would do; bytes keep it simple)
+  const cache = new Map();
+  const maskAt = (px, py) => {
+    const ix = Math.floor(px);
+    const iy = Math.floor(py);
+    if (ix < 0 || iy < 0) return 0;
+    const key = `${Math.floor(ix / 512)}_${Math.floor(iy / 512)}`;
+    let mask = cache.get(key);
+    if (mask === undefined) {
+      const file = path.join(tileDir, `${key}.png`);
+      mask = null;
+      if (fs.existsSync(file)) {
+        const png = decodePngRgba(fs.readFileSync(file));
+        const m = new Uint8Array(512 * 512);
+        const w = Math.min(512, png.width);
+        const h = Math.min(512, png.height);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const o = (y * png.width + x) * png.bpp;
+            if (isCanopyPaint(png.data[o], png.data[o + 1], png.data[o + 2])) {
+              m[y * 512 + x] = 1;
+            }
+          }
+        }
+        mask = m;
+      }
+      cache.set(key, mask);
+    }
+    if (!mask) return 0;
+    const lx = ix % 512;
+    const ly = iy % 512;
+    if (lx < 0 || ly < 0 || lx >= 512 || ly >= 512) return 0;
+    return mask[ly * 512 + lx];
+  };
+  // true when the anchor sits inside foliage (not just at its edge)
+  const isBuried = (px, py) => {
+    if (!maskAt(px, py)) return false;
+    let ring = 0;
+    for (let a = 0; a < 8; a++) {
+      ring += maskAt(px + 10 * Math.cos((a * Math.PI) / 4), py + 10 * Math.sin((a * Math.PI) / 4));
+    }
+    return ring >= 6;
+  };
+  return { isBuried, tileCount: () => cache.size };
+}
+
+function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scaleToPreview, buildingOcclusion, walkable, canopyGuard) {
   const rng = mulberry32(20261125);
   const grid = new Set();
   const points = [];
@@ -1729,6 +1795,10 @@ function buildPedestrians(cam, osm, depthTiles, roadClearance, previewPng, scale
       return false;
     }
     if (!allowDeck && isWaterPixel(previewPng, img.px * scaleToPreview, img.py * scaleToPreview).ok) {
+      return false;
+    }
+    // foliage buries the illustrated body: keep grove fringes, clear crown interiors
+    if (!allowDeck && canopyGuard && canopyGuard.isBuried(img.px, img.py)) {
       return false;
     }
 
@@ -2526,6 +2596,7 @@ function main() {
   const ambientTraffic = buildAmbientTraffic(cam, osm, previewPng, scaleToPreview);
   const buildingOcclusion = buildBuildingOcclusionIndex(rootDir, cam);
   const walkable = buildWalkableIndex(rootDir, cam);
+  const canopyGuard = buildCanopyGuard(rootDir);
   const pedestrians = buildPedestrians(
     cam,
     osm,
@@ -2535,7 +2606,9 @@ function main() {
     scaleToPreview,
     buildingOcclusion,
     walkable,
+    canopyGuard,
   );
+  console.log(`[fleet] canopy guard used ${canopyGuard.tileCount()} illustrated tiles`);
 
   // Hard self-audit: 0 pedestrians allowed on roadways, building interiors, or inside OSM road clearance
   for (let i = 0; i < pedestrians.points.length; i += 4) {
