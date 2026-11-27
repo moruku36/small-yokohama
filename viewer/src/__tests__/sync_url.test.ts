@@ -129,8 +129,21 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     expect(computeWheelZoomFactor(40, 0, true)).toBeLessThan(1);
 
     const fullCam = createFullYokohamaCamera();
+    const cloudMarginAtFocus = (zoom: number, vw: number, vh: number) => {
+      const visibleW = fullCam.imageWidthPx / zoom;
+      const visibleH = visibleW * (vh / vw);
+      const cx = RED_BRICK_CENTER_IMG.x;
+      const cy = RED_BRICK_CENTER_IMG.y;
+      return Math.max(
+        Math.max(0, visibleW / 2 - cx) / visibleW,
+        Math.max(0, visibleW / 2 - (fullCam.imageWidthPx - cx)) / visibleW,
+        Math.max(0, visibleH / 2 - cy) / visibleH,
+        Math.max(0, visibleH / 2 - (fullCam.imageHeightPx - cy)) / visibleH,
+      );
+    };
     const mobileMin = computeFullMapMinZoom(fullCam, 390, 844);
-    expect(mobileMin).toBeGreaterThanOrEqual(0.8);
+    expect(mobileMin).toBeGreaterThan(3);
+    expect(cloudMarginAtFocus(mobileMin, 390, 844)).toBeLessThanOrEqual(0.12);
     const mobileInit = computeDefaultFullMapZoom(fullCam, 390, 844);
     const mobileMax = computeFullMapMaxZoom(fullCam, 390, 844);
     expect(mobileInit).toBeGreaterThan(mobileMin);
@@ -144,7 +157,15 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     expect(mobileVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);
 
     const desktopMin = computeFullMapMinZoom(fullCam, 1280, 800);
-    expect(desktopMin).toBeGreaterThanOrEqual(0.8);
+    expect(desktopMin).toBeGreaterThan(1);
+    expect(cloudMarginAtFocus(desktopMin, 1280, 800)).toBeLessThanOrEqual(0.12);
+    const pulledOut = createInitialViewerState(
+      fullCam,
+      "?z=0.4",
+      false,
+      { width: 390, height: 844 },
+    );
+    expect(pulledOut.cameraView.zoom).toBeCloseTo(mobileMin, 5);
     const desktopInit = computeDefaultFullMapZoom(fullCam, 1280, 800);
     const desktopMax = computeFullMapMaxZoom(fullCam, 1280, 800);
     expect(desktopInit).toBeGreaterThan(desktopMin);

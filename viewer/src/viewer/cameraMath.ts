@@ -2,19 +2,41 @@ import type { CameraManifest } from "@small-yokohama/core";
 
 export const RED_BRICK_CENTER_IMG = { x: 5760, y: 4020 } as const;
 
+/**
+ * Widest zoom is framed on the waterfront, not the geometric centre of the
+ * sheet. Red Brick sits low in the drawing, so a height-fit zoom still leaves
+ * a cloud field under the harbour.
+ */
+const FOCUS_CENTER_IMG = RED_BRICK_CENTER_IMG;
+
+/** At most this fraction of the viewport may fall outside the drawing. */
+const MAX_CLOUD_MARGIN = 0.1;
+
 export function isFullYokohamaCamera(camera: CameraManifest): boolean {
   return camera.imageWidthPx > 5000;
 }
 
 export function computeFullMapMinZoom(
   camera: CameraManifest,
-  _viewportW: number,
-  _viewportH: number,
+  viewportW: number,
+  viewportH: number,
 ): number {
   if (!isFullYokohamaCamera(camera)) {
     return 0.55;
   }
-  return 0.85;
+  const vw = Math.max(1, viewportW);
+  const vh = Math.max(1, viewportH);
+  const halfLimit = 0.5 - MAX_CLOUD_MARGIN;
+  const maxVisibleW =
+    Math.min(FOCUS_CENTER_IMG.x, camera.imageWidthPx - FOCUS_CENTER_IMG.x) / halfLimit;
+  const maxVisibleH =
+    Math.min(FOCUS_CENTER_IMG.y, camera.imageHeightPx - FOCUS_CENTER_IMG.y) / halfLimit;
+  // OpenSeadragon zoom is image width divided by the visible image width.
+  const zoomForWidth = camera.imageWidthPx / maxVisibleW;
+  const zoomForHeight = camera.imageWidthPx / (maxVisibleH * (vw / vh));
+  // Also cover the viewport, so panning off the focus point cannot open a sea of cloud.
+  const fitHeightZoom = (camera.imageWidthPx / camera.imageHeightPx) * (vh / vw);
+  return Math.max(zoomForWidth, zoomForHeight, 1, fitHeightZoom);
 }
 
 export function computeDefaultFullMapZoom(

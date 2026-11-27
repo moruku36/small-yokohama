@@ -16,6 +16,7 @@ import type { Lang } from "./i18n.js";
 import {
   RED_BRICK_CENTER_IMG,
   computeDefaultFullMapZoom,
+  computeFullMapMinZoom,
   isFullYokohamaCamera,
 } from "./viewer/cameraMath.js";
 import {
@@ -142,7 +143,9 @@ export function createInitialViewerState(
   const isFullMap = isFullYokohamaCamera(camera);
   const defaultCenterX = isFullMap ? RED_BRICK_CENTER_IMG.x : camera.imageWidthPx * 0.66;
   const defaultCenterY = isFullMap ? RED_BRICK_CENTER_IMG.y : camera.imageHeightPx * 0.59;
-  const minZoom = isFullMap ? 0.35 : 0.6;
+  const minZoom = isFullMap
+    ? computeFullMapMinZoom(camera, viewport.width, viewport.height)
+    : 0.6;
   const maxZoom = isFullMap ? 96 : 16;
 
   // ?at=lat,lon,650m (geographic, as Small SF shares views) wins over the older ?x=&y=&z= image coordinates
