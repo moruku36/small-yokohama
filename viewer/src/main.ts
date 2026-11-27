@@ -170,6 +170,61 @@ async function bootstrap(): Promise<void> {
   const sessionStartDate = new Date();
   // Weather enriches the map, but the base drawing must not wait for either endpoint.
   const initialWeather = fetchYokohamaWeather();
+
+  // --- Live-feed error reporting (B4) -------------------------------------
+  // Every live fetcher resolves to `null` when its upstream is unreachable, so
+  // without this an outage would stay completely invisible to the user.
+  type LiveFeedKey = "trains" | "buses" | "planes" | "weather";
+  const FEED_ERROR_NOTICE_COOLDOWN_MS = 5 * 60_000;
+  const lastFeedErrorNoticeAt = new Map<LiveFeedKey, number>();
+  let pendingFeedErrors: Set<LiveFeedKey> | null = null;
+  const feedErrorLabel = (feed: LiveFeedKey): string => {
+    const d = getDict(state.lang);
+    switch (feed) {
+      case "trains":
+        return d.feedOutageTrains;
+      case "buses":
+        return d.feedOutageBuses;
+      case "planes":
+        return d.feedOutagePlanes;
+      case "weather":
+        return d.feedOutageWeather;
+    }
+  };
+  const flushFeedErrors = () => {
+    const feeds = pendingFeedErrors;
+    pendingFeedErrors = null;
+    if (!feeds || feeds.size === 0) return;
+    const keys = [...feeds].join(", ");
+    console.warn(`[small-yokohama] live feed unavailable: ${keys}`);
+    const d = getDict(state.lang);
+    // One toast per turn: the status bar spans the bottom of the screen, so
+    // stacking several anchored notices there would only hide each other.
+    const [only] = feeds;
+    showToast(only && feeds.size === 1 ? feedErrorLabel(only) : d.feedOutageBoot);
+  };
+  const reportFeedError = (feed: LiveFeedKey) => {
+    const now = Date.now();
+    const last = lastFeedErrorNoticeAt.get(feed);
+    if (last !== undefined && now - last < FEED_ERROR_NOTICE_COOLDOWN_MS) return;
+    lastFeedErrorNoticeAt.set(feed, now);
+    if (!pendingFeedErrors) {
+      pendingFeedErrors = new Set();
+      window.setTimeout(flushFeedErrors, 0);
+    }
+    pendingFeedErrors.add(feed);
+  };
+
+  // --- Teardown bookkeeping (B5) ------------------------------------------
+  // Without this, navigating away leaves intervals, a rAF loop, listeners and
+  // audio running against state whose DOM is gone (notably on bfcache pages).
+  const teardownTimers: number[] = [];
+  const every = (fn: () => void, ms: number): number => {
+    const id = window.setInterval(fn, ms);
+    teardownTimers.push(id);
+    return id;
+  };
+
   let [
     currentSnapshot,
     { railBundle, streetlights },
@@ -513,6 +568,13 @@ async function bootstrap(): Promise<void> {
     }, 2000);
   };
 
+  // Report whatever failed during boot: all three checks are synchronous, so the
+  // coalescing in reportFeedError turns them into a single notice at most.
+  // Weather is checked where `initialWeather` settles, below.
+  if (!liveTrainsApi) reportFeedError("trains");
+  if (!liveBusesApi) reportFeedError("buses");
+  if (!livePlanesApi) reportFeedError("planes");
+
   /** Where the selected bus, train or ship is this frame (null when it is gone or stands still). */
   const followTarget = (): { lon: number; lat: number; elevM: number } | null => {
     const sel = state.selected;
@@ -606,7 +668,7 @@ async function bootstrap(): Promise<void> {
       state.activeTab = null;
       state.aboutOpen = false;
       advanceTvStop();
-      tvTimerId = window.setInterval(advanceTvStop, 7500);
+      tvTimerId = every(advanceTvStop, 7500);
     },
     onStartRideAlong: () => {
       const curId = state.selected?.kind === "ridealong" ? state.selected.car.carId : null;
@@ -933,9 +995,15 @@ async function bootstrap(): Promise<void> {
     );
     updateStatus(wState.statusText);
   };
-  void initialWeather.then(applyLiveWeather);
+  void initialWeather.then((weather) => {
+    if (weather) {
+      applyLiveWeather(weather);
+    } else {
+      reportFeedError("weather");
+    }
+  });
 
-  window.addEventListener("keydown", (e) => {
+  const handleKeydown = (e: KeyboardEvent) => {
     if (
       e.target instanceof HTMLInputElement ||
       e.target instanceof HTMLSelectElement ||
@@ -984,9 +1052,10 @@ async function bootstrap(): Promise<void> {
       e.preventDefault();
       handlers.onTogglePlay();
     }
-  });
+  };
+  window.addEventListener("keydown", handleKeydown);
 
-  window.setInterval(() => {
+  every(() => {
     if (state.feedPreset === "live" && !document.hidden) {
       void fetchSnapshotForPreset(bundle.baseReleaseUrl, "live", state.liveEndpoint).then(
         (snap) => {
@@ -1005,7 +1074,7 @@ async function bootstrap(): Promise<void> {
     }
   }, 30_000);
 
-  window.setInterval(() => {
+  every(() => {
     if (document.hidden) return;
     void fetchLiveBusesApi(state.liveEndpoint).then((payload: LiveBusApiPayload | null) => {
       if (payload) {
@@ -1019,11 +1088,13 @@ async function bootstrap(): Promise<void> {
         );
         mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
         syncTransitBadges();
+      } else {
+        reportFeedError("buses");
       }
     });
   }, 25_000);
 
-  window.setInterval(() => {
+  every(() => {
     if (document.hidden) return;
     void fetchLiveTrainsApi().then((payload) => {
       if (payload) {
@@ -1036,11 +1107,13 @@ async function bootstrap(): Promise<void> {
         );
         mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
         syncTransitBadges();
+      } else {
+        reportFeedError("trains");
       }
     });
   }, 20_000);
 
-  window.setInterval(() => {
+  every(() => {
     if (document.hidden) return;
     void fetchLivePlanesApi().then((payload: LivePlaneApiPayload | null) => {
       if (payload) {
@@ -1049,16 +1122,24 @@ async function bootstrap(): Promise<void> {
         mapViewer.updateState(state, resolvedFeed, resolvedTrains, false, resolvedPlanes, resolvedAirCabins);
         syncTransitBadges();
         updateStatus();
+      } else {
+        reportFeedError("planes");
       }
     });
   }, 15_000);
 
-  window.setInterval(() => {
+  every(() => {
     if (document.hidden) return;
-    void fetchYokohamaWeather().then(applyLiveWeather);
+    void fetchYokohamaWeather().then((w) => {
+      if (w) {
+        applyLiveWeather(w);
+      } else {
+        reportFeedError("weather");
+      }
+    });
   }, 600_000);
 
-  window.setInterval(() => {
+  every(() => {
     if (document.hidden) return;
     updateStatus();
     if (state.sunHourJst === null) {
@@ -1076,7 +1157,7 @@ async function bootstrap(): Promise<void> {
     }
   }, 15_000);
 
-  window.setInterval(() => {
+  every(() => {
     if (state.soundOn && !document.hidden) syncSound();
   }, 1000);
 
@@ -1203,12 +1284,30 @@ async function bootstrap(): Promise<void> {
     rafId = window.requestAnimationFrame(tick);
   };
 
-  document.addEventListener("visibilitychange", () => {
+  const handleVisibilityChange = () => {
     if (!document.hidden && rafId === 0) {
       lastTs = performance.now();
       rafId = window.requestAnimationFrame(tick);
     }
-  });
+  };
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+
+  // Releases every timer, listener and audio node this page started. The
+  // browser does not do it for us when the document is frozen or parked in the
+  // back/forward cache, and the rAF loop would keep running against a page
+  // whose canvas is already gone.
+  const teardown = () => {
+    for (const id of teardownTimers) window.clearInterval(id);
+    teardownTimers.length = 0;
+    if (rafId !== 0) {
+      window.cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+    window.removeEventListener("keydown", handleKeydown);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    soundscape.disable();
+  };
+  window.addEventListener("pagehide", teardown, { once: true });
 
     rafId = window.requestAnimationFrame(tick);
   } catch (err) {

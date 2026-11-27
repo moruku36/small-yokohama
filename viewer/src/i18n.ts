@@ -147,6 +147,11 @@ export interface I18nDict {
   mapLoadError: string;
   retryMap: string;
   overlayUnavailable: string;
+  feedOutageBoot: string;
+  feedOutageTrains: string;
+  feedOutageBuses: string;
+  feedOutagePlanes: string;
+  feedOutageWeather: string;
 }
 
 const JA: I18nDict = {
@@ -319,6 +324,11 @@ const JA: I18nDict = {
   mapLoadError: "地図を読み込めませんでした。",
   retryMap: "地図を再試行",
   overlayUnavailable: "WebGL2 を利用できないため、一部の地図レイヤーと演出は表示されません。",
+  feedOutageBoot: "ライブ情報の取得に失敗しました。時刻に応じた想定データで表示しています。",
+  feedOutageTrains: "列車のライブ情報が取得できません。想定データで表示しています。",
+  feedOutageBuses: "バスのライブ情報が取得できません。想定データで表示しています。",
+  feedOutagePlanes: "航空機のライブ情報が取得できません。想定データで表示しています。",
+  feedOutageWeather: "天気のライブ情報が取得できません。現在の表示を維持しています。",
 };
 
 const EN: I18nDict = {
@@ -491,6 +501,11 @@ const EN: I18nDict = {
   mapLoadError: "The map could not be loaded.",
   retryMap: "Retry map",
   overlayUnavailable: "WebGL2 is unavailable. Some map layers and effects are not shown.",
+  feedOutageBoot: "Live data could not be loaded. Showing estimated data for this time.",
+  feedOutageTrains: "Live train data is unavailable. Showing estimated data.",
+  feedOutageBuses: "Live bus data is unavailable. Showing estimated data.",
+  feedOutagePlanes: "Live aircraft data is unavailable. Showing estimated data.",
+  feedOutageWeather: "Live weather data is unavailable. Keeping the current view.",
 };
 
 export function getDict(lang: Lang): I18nDict {
