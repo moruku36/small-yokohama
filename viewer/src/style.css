@@ -1645,11 +1645,11 @@ html[data-theme="dark"] .gmaps-btn.primary:hover {
     left: max(10px, env(safe-area-inset-left));
     top: max(10px, env(safe-area-inset-top));
     max-width: calc(100vw - 66px);
-    padding: 7px 11px;
+    padding: 7px 10px;
     height: auto;
     min-height: 40px;
     gap: 8px;
-    font-size: 13.5px;
+    font-size: 12.5px;
     line-height: 1.25;
   }
   .bar .title {
@@ -1657,7 +1657,7 @@ html[data-theme="dark"] .gmaps-btn.primary:hover {
   }
   .bar .tools {
     flex-wrap: wrap;
-    gap: 5px 11px;
+    gap: 4px 8px;
     overflow: visible;
   }
   .bar .tools button {
