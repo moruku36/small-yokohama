@@ -153,8 +153,8 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     const mobileInit = computeDefaultFullMapZoom(fullCam, 390, 844);
     const mobileMax = computeFullMapMaxZoom(fullCam, 390, 844);
     expect(mobileInit).toBeGreaterThan(mobileMin);
-    expect(mobileInit).toBeGreaterThan(7);
-    expect(mobileInit).toBeLessThan(12);
+    expect(mobileInit).toBeGreaterThan(6);
+    expect(mobileInit).toBeLessThan(10);
     expect(mobileMax).toBeGreaterThanOrEqual(60);
     expect(mobileMax).toBeLessThanOrEqual(96);
     expect((fullCam.imageWidthPx / mobileMax) * fullCam.metersPerPixel).toBeLessThanOrEqual(70);
@@ -175,7 +175,7 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     const desktopInit = computeDefaultFullMapZoom(fullCam, 1280, 800);
     const desktopMax = computeFullMapMaxZoom(fullCam, 1280, 800);
     expect(desktopInit).toBeGreaterThan(desktopMin);
-    expect(desktopInit).toBeGreaterThan(6);
+    expect(desktopInit).toBeGreaterThan(5);
     expect(desktopInit).toBeLessThan(10);
     expect(desktopMax).toBeGreaterThanOrEqual(50);
     expect(desktopMax).toBeLessThanOrEqual(96);
@@ -185,7 +185,7 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
     expect(desktopVisibleH).toBeLessThanOrEqual(fullCam.imageHeightPx);
 
     const wideDesktopInit = computeDefaultFullMapZoom(fullCam, 1440, 900);
-    expect(wideDesktopInit).toBeGreaterThan(6);
+    expect(wideDesktopInit).toBeGreaterThan(5);
     expect(wideDesktopInit).toBeLessThan(10);
 
     const dayNow = new Date("2026-11-25T03:30:00Z");

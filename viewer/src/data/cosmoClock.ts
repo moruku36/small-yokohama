@@ -9,16 +9,19 @@ export interface CosmoClockVisualState {
 }
 
 /**
- * Verified OSM coordinates for Cosmo Clock 21 (osmId: 363854124, Minato Mirai / Shinko):
- * real total height 112.5 m, 100 m wheel diameter -> hub center at ~62.5 m elevation.
+ * Cosmo Clock 21 (Minato Mirai / Shinko canal waterfront):
+ * Placed forward over the Shinko canal promenade so the full 3D wheel,
+ * splayed A-frame legs, gondolas, and live clock stand free in front of
+ * background structures with a 21° three-quarter angle toward the camera.
  */
 export const COSMO_CLOCK_ORIGIN = {
-  lon: 139.636762,
-  lat: 35.455358,
+  lon: 139.63708,
+  lat: 35.45562,
   hubElevM: 62.5,
   wheelRadiusM: 50.0,
   topElevM: 112.5,
-  planeAzimuthDeg: 22.0,
+  faceNormalAzimuthDeg: 24.0,
+  planeAzimuthDeg: 294.0,
 } as const;
 
 const SHOW_PROGRAMS: ReadonlyArray<{

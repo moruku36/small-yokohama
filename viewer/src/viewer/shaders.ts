@@ -222,6 +222,7 @@ layout(location = 2) in vec3 a_normalLocal;
 
 uniform vec3 u_vehicleOriginLocalM;
 uniform float u_headingRad; // clockwise from North (+Y)
+uniform float u_wheelRollRad; // rotation around local +Y axle (for Cosmo Clock 21)
 uniform vec3 u_meshScale;   // local (x, y, z) scale in meters
 uniform vec3 u_cameraOriginLocalM;
 uniform vec3 u_camRight;
@@ -247,6 +248,22 @@ void main() {
 
   vec3 nLocalSafe = length(a_normalLocal) > 1e-4 ? normalize(a_normalLocal) : vec3(0.0, 0.0, 1.0);
   vec3 scaledPos = a_posLocalM * u_meshScale + (u_isOutline > 0.5 ? nLocalSafe * u_outlineExpandM : vec3(0.0));
+  vec3 nScaled = a_normalLocal / max(u_meshScale, vec3(0.01));
+
+  if (abs(u_wheelRollRad) > 1e-5) {
+    float rs = sin(u_wheelRollRad);
+    float rc = cos(u_wheelRollRad);
+    scaledPos = vec3(
+      scaledPos.x * rc + scaledPos.z * rs,
+      scaledPos.y,
+      -scaledPos.x * rs + scaledPos.z * rc
+    );
+    nScaled = vec3(
+      nScaled.x * rc + nScaled.z * rs,
+      nScaled.y,
+      -nScaled.x * rs + nScaled.z * rc
+    );
+  }
 
   // Rotate vehicle local (right, forward, up) to EPSG:6677 local (east, north, up)
   vec3 worldOffset = vec3(
@@ -256,7 +273,6 @@ void main() {
   );
   vec3 worldPos = u_vehicleOriginLocalM + worldOffset;
 
-  vec3 nScaled = a_normalLocal / max(u_meshScale, vec3(0.01));
   vec3 nWorld = vec3(
     nScaled.x * c + nScaled.y * s,
     -nScaled.x * s + nScaled.y * c,
@@ -1126,27 +1142,22 @@ void main() {
   float rotTheta = theta - u_wheelAngleRad;
   vec3 ledCol = cosmoPalette(theta, r, u_simTimeSec, u_showMode);
 
-  // Support A-frame legs (visible in lower half)
-  float dLegL = cSegDist(p, vec2(-0.08, 0.02), vec2(-0.50, -0.96));
-  float dLegR = cSegDist(p, vec2(0.08, 0.02), vec2(0.50, -0.96));
-  float legMask = 1.0 - smoothstep(0.016, 0.031, min(dLegL, dLegR));
-
-  // Outer & inner wheel truss rings + 24 radial spokes + 24 gondolas
-  float outerRing = 1.0 - smoothstep(0.010, 0.026, abs(r - 0.90));
-  float innerRing = 1.0 - smoothstep(0.008, 0.020, abs(r - 0.80));
-  float hubRim = 1.0 - smoothstep(0.006, 0.018, abs(r - 0.25));
+  // Outer & inner wheel truss LED rings + 24 radial LED spokes + gondola glow accents
+  float outerRing = 1.0 - smoothstep(0.010, 0.028, abs(r - 0.92));
+  float innerRing = 1.0 - smoothstep(0.008, 0.022, abs(r - 0.79));
+  float hubRim = 1.0 - smoothstep(0.007, 0.020, abs(r - 0.24));
   float spokeAng = fract((rotTheta / 6.2831853) * 24.0);
   float spokeDist = abs(spokeAng - 0.5) * (6.2831853 / 24.0) * max(r, 0.15);
-  float spokes = (1.0 - smoothstep(0.004, 0.013, spokeDist)) * step(0.24, r) * step(r, 0.91);
+  float spokes = (1.0 - smoothstep(0.004, 0.014, spokeDist)) * step(0.24, r) * step(r, 0.92);
 
-  // Gondola pods hanging around the 0.94 rim radius
+  // Gondola rim accent dots aligned with the 24 3D gondolas at r = 0.93
   float gongCell = floor((rotTheta / 6.2831853) * 24.0 + 0.5);
   float gongAng = gongCell * (6.2831853 / 24.0) + u_wheelAngleRad;
-  vec2 gongCenter = vec2(cos(gongAng), sin(gongAng)) * 0.955;
-  float gondolas = 1.0 - smoothstep(0.016, 0.032, length((p - gongCenter) * vec2(1.15, 0.95)));
+  vec2 gongCenter = vec2(cos(gongAng), sin(gongAng)) * 0.93;
+  float gondolas = 1.0 - smoothstep(0.012, 0.030, length((p - gongCenter) * vec2(1.1, 0.95)));
 
-  // Hub clock casing (r <= 0.24) + live 7-segment JST digits (HH:MM)
-  float hubMask = 1.0 - smoothstep(0.232, 0.245, r);
+  // Hub clock dial casing (r <= 0.24) + live 7-segment JST digits (HH:MM) mounted on 3D drum front
+  float hubMask = 1.0 - smoothstep(0.228, 0.242, r);
   float digitsMask = 0.0;
   if (r < 0.24) {
     digitsMask = max(digitsMask, sampleDigit7(p - vec2(-0.115, 0.0), u_clockDigits.x));
@@ -1160,24 +1171,21 @@ void main() {
     }
   }
 
-  // Combine daytime steel architecture & nighttime vivid Cosmo Clock LED show
-  float structAlpha = clamp(max(max(outerRing, innerRing), max(spokes, max(gondolas, legMask))), 0.0, 1.0);
-  vec3 dayStructRgb = mix(vec3(0.76, 0.80, 0.84), vec3(0.14, 0.18, 0.22), 0.25 * (1.0 - max(outerRing, legMask)));
-  vec3 hubDayBg = vec3(0.08, 0.26, 0.30);
-  vec3 digitRgb = mix(vec3(0.78, 0.98, 0.88), vec3(0.45, 1.0, 0.82), u_nightIntensity);
+  // Nighttime LED illumination overlays over the 3D steel rims, spokes & hub clock
+  float nightLed = smoothstep(0.08, 0.75, u_nightIntensity);
+  float haloGlow = nightLed * exp(-abs(r - 0.90) * 16.0) * 0.44;
+  float ledActive = clamp(max(max(outerRing, innerRing), max(spokes * 0.92, max(gondolas * 0.85, hubRim))), 0.0, 1.0);
 
-  float haloGlow = u_nightIntensity * exp(-abs(r - 0.88) * 18.0) * 0.42;
-  float ledActive = clamp(max(max(outerRing, innerRing), max(spokes * 0.9, max(gondolas, hubRim))), 0.0, 1.0);
-
-  vec3 nightWheelRgb = mix(dayStructRgb * 0.45, ledCol * 1.25, ledActive);
-  vec3 wheelRgb = mix(dayStructRgb, nightWheelRgb, u_nightIntensity);
-  float wheelAlpha = clamp(max(structAlpha * mix(0.68, 0.96, u_nightIntensity), haloGlow), 0.0, 0.98);
+  vec3 wheelRgb = ledCol * 1.28;
+  float wheelAlpha = clamp(max(ledActive * nightLed * 0.92, haloGlow), 0.0, 0.95);
 
   if (hubMask > 0.05) {
-    vec3 hubBg = mix(hubDayBg, vec3(0.03, 0.07, 0.11), u_nightIntensity);
+    vec3 hubDayBg = vec3(0.11, 0.30, 0.36);
+    vec3 digitRgb = mix(vec3(0.84, 1.0, 0.90), vec3(0.42, 1.0, 0.82), nightLed);
+    vec3 hubBg = mix(hubDayBg, vec3(0.03, 0.07, 0.11), nightLed);
     vec3 hubRgb = mix(hubBg, digitRgb, digitsMask);
     wheelRgb = mix(wheelRgb, hubRgb, hubMask);
-    wheelAlpha = max(wheelAlpha, hubMask * mix(0.92, 0.98, u_nightIntensity));
+    wheelAlpha = max(wheelAlpha, hubMask * mix(0.94, 0.98, nightLed));
   }
 
   if (wheelAlpha < 0.02) discard;

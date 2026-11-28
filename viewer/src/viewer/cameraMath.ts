@@ -1,6 +1,6 @@
 import type { CameraManifest } from "@small-yokohama/core";
 
-export const RED_BRICK_CENTER_IMG = { x: 5760, y: 4020 } as const;
+export const RED_BRICK_CENTER_IMG = { x: 6580, y: 3620 } as const;
 
 /**
  * Widest zoom is framed on the waterfront, not the geometric centre of the
@@ -49,13 +49,13 @@ export function computeDefaultFullMapZoom(
   }
   const targetMeters =
     viewportW <= 700
-      ? 540
-      : Math.min(740, Math.max(620, viewportW * 0.5));
+      ? 800
+      : Math.min(920, Math.max(780, viewportW * 0.68));
   const visibleImgW = targetMeters / camera.metersPerPixel;
   const desiredZoom = camera.imageWidthPx / visibleImgW;
   return Math.min(
     48,
-    Math.max(computeFullMapMinZoom(camera, viewportW, viewportH) * 1.15, desiredZoom),
+    Math.max(computeFullMapMinZoom(camera, viewportW, viewportH) * 1.08, desiredZoom),
   );
 }
 

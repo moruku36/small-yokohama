@@ -615,6 +615,216 @@ function buildAirCabinStructureMesh(camera: CameraManifest): {
   return { mesh: finalizeMesh(verts), originLocalM };
 }
 
+function pushBeam3D(
+  verts: number[],
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  radiusM: number,
+  rgb: readonly [number, number, number],
+): void {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const dz = b[2] - a[2];
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 1e-4) return;
+  const dir: readonly [number, number, number] = [dx / len, dy / len, dz / len];
+  const ref: readonly [number, number, number] =
+    Math.abs(dir[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+  let ux = dir[1] * ref[2] - dir[2] * ref[1];
+  let uy = dir[2] * ref[0] - dir[0] * ref[2];
+  let uz = dir[0] * ref[1] - dir[1] * ref[0];
+  const uLen = Math.hypot(ux, uy, uz) || 1;
+  ux /= uLen;
+  uy /= uLen;
+  uz /= uLen;
+  const vx = uy * dir[2] - uz * dir[1];
+  const vy = uz * dir[0] - ux * dir[2];
+  const vz = ux * dir[1] - uy * dir[0];
+  const pt = (
+    base: readonly [number, number, number],
+    su: number,
+    sv: number,
+  ): readonly [number, number, number] => [
+    base[0] + ux * su * radiusM + vx * sv * radiusM,
+    base[1] + uy * su * radiusM + vy * sv * radiusM,
+    base[2] + uz * su * radiusM + vz * sv * radiusM,
+  ];
+  const a0 = pt(a, -1, -1);
+  const a1 = pt(a, 1, -1);
+  const a2 = pt(a, 1, 1);
+  const a3 = pt(a, -1, 1);
+  const b0 = pt(b, -1, -1);
+  const b1 = pt(b, 1, -1);
+  const b2 = pt(b, 1, 1);
+  const b3 = pt(b, -1, 1);
+  pushQuad(verts, a0, a1, b1, b0, [-vx, -vy, -vz], rgb);
+  pushQuad(verts, a1, a2, b2, b1, [ux, uy, uz], rgb);
+  pushQuad(verts, a2, a3, b3, b2, [vx, vy, vz], rgb);
+  pushQuad(verts, a3, a0, b0, b3, [-ux, -uy, -uz], rgb);
+  pushQuad(verts, a3, a2, a1, a0, [-dir[0], -dir[1], -dir[2]], rgb);
+  pushQuad(verts, b0, b1, b2, b3, dir, rgb);
+}
+
+function buildCosmoShadowMesh(): MeshData {
+  const verts: number[] = [];
+  const shadowRgb = [0.06, 0.08, 0.12] as const;
+  pushBoxMesh(verts, 0, -1, 0.05, 0.18, 58, 26, shadowRgb, shadowRgb);
+  pushBoxMesh(verts, 0, 12, 0.05, 0.16, 86, 14, shadowRgb, shadowRgb);
+  return finalizeMesh(verts);
+}
+
+function buildCosmoStructureMesh(): MeshData {
+  const verts: number[] = [];
+  const concreteDeck = [0.80, 0.77, 0.71] as const;
+  const concreteSide = [0.58, 0.56, 0.52] as const;
+  const basePlate = [0.42, 0.45, 0.50] as const;
+  const legWhite = [0.92, 0.94, 0.97] as const;
+  const braceSilver = [0.82, 0.86, 0.90] as const;
+  const drumShell = [0.86, 0.90, 0.94] as const;
+  const drumTeal = [0.12, 0.34, 0.40] as const;
+
+  // Stepped waterfront plinth & anchor footings
+  pushBoxMesh(verts, 0, 0, 0.0, 2.2, 56, 22, concreteSide, concreteDeck);
+  pushBoxMesh(verts, 0, 0, 2.2, 4.5, 50, 18, concreteSide, concreteDeck);
+  for (const sx of [-1, 1] as const) {
+    for (const sy of [-1, 1] as const) {
+      pushBoxMesh(verts, sx * 23.5, sy * 9.2, 4.2, 6.2, 4.6, 4.6, basePlate, basePlate);
+    }
+  }
+
+  // 4 splayed 3D steel A-frame support legs + horizontal tie braces
+  const hubZ = COSMO_CLOCK_ORIGIN.hubElevM;
+  for (const sy of [-1, 1] as const) {
+    pushBeam3D(verts, [-23.5, sy * 9.2, 5.2], [-3.6, sy * 6.5, hubZ], 1.65, legWhite);
+    pushBeam3D(verts, [23.5, sy * 9.2, 5.2], [3.6, sy * 6.5, hubZ], 1.65, legWhite);
+  }
+  for (const zBrace of [22, 42]) {
+    const f = (zBrace - 5.2) / (hubZ - 5.2);
+    const xAt = 23.5 + (3.6 - 23.5) * f;
+    const yAt = 9.2 + (6.5 - 9.2) * f;
+    pushBeam3D(verts, [-xAt, yAt, zBrace], [xAt, yAt, zBrace], 0.92, braceSilver);
+    pushBeam3D(verts, [-xAt, -yAt, zBrace], [xAt, -yAt, zBrace], 0.92, braceSilver);
+    pushBeam3D(verts, [-xAt, -yAt, zBrace], [-xAt, yAt, zBrace], 0.92, braceSilver);
+    pushBeam3D(verts, [xAt, -yAt, zBrace], [xAt, yAt, zBrace], 0.92, braceSilver);
+  }
+
+  // 3D cylindrical hub drum & axle housing (y = -7.2..+7.2 m)
+  const drumSides = 16;
+  const drumR = 11.8;
+  const drumHalfY = 7.2;
+  for (let i = 0; i < drumSides; i++) {
+    const a0 = (i / drumSides) * Math.PI * 2;
+    const a1 = ((i + 1) / drumSides) * Math.PI * 2;
+    const am = (a0 + a1) * 0.5;
+    const p0F: readonly [number, number, number] = [
+      Math.cos(a0) * drumR,
+      drumHalfY,
+      hubZ + Math.sin(a0) * drumR,
+    ];
+    const p1F: readonly [number, number, number] = [
+      Math.cos(a1) * drumR,
+      drumHalfY,
+      hubZ + Math.sin(a1) * drumR,
+    ];
+    const p0B: readonly [number, number, number] = [p0F[0], -drumHalfY, p0F[2]];
+    const p1B: readonly [number, number, number] = [p1F[0], -drumHalfY, p1F[2]];
+    pushQuad(verts, p0B, p1B, p1F, p0F, [Math.cos(am), 0, Math.sin(am)], drumShell);
+    pushTri(verts, [0, drumHalfY, hubZ], p0F, p1F, [0, 1, 0], drumTeal);
+    pushTri(verts, [0, -drumHalfY, hubZ], p1B, p0B, [0, -1, 0], drumTeal);
+  }
+
+  return finalizeMesh(verts);
+}
+
+function buildCosmoWheelMesh(): MeshData {
+  const verts: number[] = [];
+  const rimWhite = [0.94, 0.96, 0.98] as const;
+  const trussSilver = [0.85, 0.89, 0.93] as const;
+  const accentTeal = [0.16, 0.64, 0.66] as const;
+  const spokeSteel = [0.82, 0.86, 0.91] as const;
+
+  const rimSegments = 32;
+  const rOuter = 46.0;
+  const rAccent = 42.8;
+  const rInner = 39.5;
+  const rHubJoin = 11.2;
+
+  for (const yPlane of [-4.4, 4.4]) {
+    for (let i = 0; i < rimSegments; i++) {
+      const a0 = (i / rimSegments) * Math.PI * 2;
+      const a1 = ((i + 1) / rimSegments) * Math.PI * 2;
+      pushBeam3D(
+        verts,
+        [Math.cos(a0) * rOuter, yPlane, Math.sin(a0) * rOuter],
+        [Math.cos(a1) * rOuter, yPlane, Math.sin(a1) * rOuter],
+        0.95,
+        rimWhite,
+      );
+      pushBeam3D(
+        verts,
+        [Math.cos(a0) * rAccent, yPlane * 0.96, Math.sin(a0) * rAccent],
+        [Math.cos(a1) * rAccent, yPlane * 0.96, Math.sin(a1) * rAccent],
+        0.52,
+        accentTeal,
+      );
+      pushBeam3D(
+        verts,
+        [Math.cos(a0) * rInner, yPlane * 0.84, Math.sin(a0) * rInner],
+        [Math.cos(a1) * rInner, yPlane * 0.84, Math.sin(a1) * rInner],
+        0.72,
+        trussSilver,
+      );
+    }
+  }
+
+  const spokeCount = 24;
+  for (let i = 0; i < spokeCount; i++) {
+    const a = (i / spokeCount) * Math.PI * 2;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    // Lateral hanger bar spanning front & back outer rims
+    pushBeam3D(
+      verts,
+      [ca * rOuter, -4.4, sa * rOuter],
+      [ca * rOuter, 4.4, sa * rOuter],
+      0.55,
+      trussSilver,
+    );
+    // Front & back radial spokes + outer truss tie
+    for (const ySign of [-1, 1] as const) {
+      pushBeam3D(
+        verts,
+        [ca * rHubJoin, ySign * 3.6, sa * rHubJoin],
+        [ca * rOuter, ySign * 4.4, sa * rOuter],
+        0.44,
+        spokeSteel,
+      );
+    }
+  }
+
+  return finalizeMesh(verts);
+}
+
+function buildCosmoGondolaMesh(nightLit: boolean): MeshData {
+  const verts: number[] = [];
+  const armSilver = [0.80, 0.84, 0.89] as const;
+  const roofWhite = [0.96, 0.97, 0.98] as const;
+  const lowerTeal = [0.22, 0.72, 0.72] as const;
+  const trimCoral = [0.92, 0.38, 0.30] as const;
+  const glassRgb = nightLit
+    ? ([1.0, 0.86, 0.48] as const)
+    : ([0.18, 0.44, 0.64] as const);
+
+  pushBoxMesh(verts, 0, 0, -0.55, 0.25, 0.65, 6.2, armSilver, armSilver);
+  pushBoxMesh(verts, 0, 0, -1.35, -0.45, 0.55, 0.85, armSilver, armSilver);
+  pushBoxMesh(verts, 0, 0, -1.85, -1.25, 3.2, 4.3, roofWhite, roofWhite);
+  pushBoxMesh(verts, 0, 0, -3.55, -1.85, 3.4, 4.6, glassRgb, roofWhite);
+  pushBoxMesh(verts, 0, 0, -3.95, -3.55, 3.3, 4.5, trimCoral, trimCoral);
+  pushBoxMesh(verts, 0, 0, -4.65, -3.95, 3.15, 4.3, lowerTeal, lowerTeal);
+
+  return finalizeMesh(verts);
+}
+
 function buildAirCabinGondolaMesh(nightLit: boolean): MeshData {
   const verts: number[] = [];
   const gripDark = [0.22, 0.24, 0.29] as const;
@@ -882,6 +1092,13 @@ export class WebGLOverlay {
     day: { vao: WebGLVertexArrayObject; count: number };
     night: { vao: WebGLVertexArrayObject; count: number };
   };
+  private readonly cosmoShadowMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly cosmoStructureMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly cosmoWheelMesh: { vao: WebGLVertexArrayObject; count: number };
+  private readonly cosmoGondolaMeshes: {
+    day: { vao: WebGLVertexArrayObject; count: number };
+    night: { vao: WebGLVertexArrayObject; count: number };
+  };
   private readonly planeMeshes: Record<
     PlaneMeshKind,
     { vao: WebGLVertexArrayObject; count: number }
@@ -1135,6 +1352,13 @@ export class WebGLOverlay {
     this.airCabinGondolaMeshes = {
       day: createStaticMeshVao(gl, buildAirCabinGondolaMesh(false)),
       night: createStaticMeshVao(gl, buildAirCabinGondolaMesh(true)),
+    };
+    this.cosmoShadowMesh = createStaticMeshVao(gl, buildCosmoShadowMesh());
+    this.cosmoStructureMesh = createStaticMeshVao(gl, buildCosmoStructureMesh());
+    this.cosmoWheelMesh = createStaticMeshVao(gl, buildCosmoWheelMesh());
+    this.cosmoGondolaMeshes = {
+      day: createStaticMeshVao(gl, buildCosmoGondolaMesh(false)),
+      night: createStaticMeshVao(gl, buildCosmoGondolaMesh(true)),
     };
 
     this.planeMeshes = {
@@ -1420,15 +1644,17 @@ export class WebGLOverlay {
       }
     }
 
-    // 2. 3D Depth-Occluded Wakes, Ships, Multi-Livery Buses, Multi-Car Trains, Air Cabin, Shadows & Ambient Cars
+    // 2. 3D Depth-Occluded Wakes, Ships, Multi-Livery Buses, Multi-Car Trains, Air Cabin, Cosmo Clock, Shadows & Ambient Cars
     const planes = opts.planes ?? [];
     const airCabins = opts.airCabins ?? [];
     const showAirCabin = Boolean(opts.showAirCabin);
+    const hasCosmoClock = opts.showCosmoClock !== false && Boolean(opts.cosmoClock);
     const hasMovingObjects =
       opts.vehicles.length > 0 ||
       opts.portCalls.length > 0 ||
       opts.trains.length > 0 ||
       showAirCabin ||
+      hasCosmoClock ||
       planes.length > 0 ||
       hasAmbientCars;
     if (hasMovingObjects) {
@@ -1466,6 +1692,7 @@ export class WebGLOverlay {
 
       const uOriginLoc = gl.getUniformLocation(this.vehicleProg, "u_vehicleOriginLocalM");
       const uHeadingLoc = gl.getUniformLocation(this.vehicleProg, "u_headingRad");
+      const uWheelRollLoc = gl.getUniformLocation(this.vehicleProg, "u_wheelRollRad");
       const uScaleLoc = gl.getUniformLocation(this.vehicleProg, "u_meshScale");
       const uTintLoc = gl.getUniformLocation(this.vehicleProg, "u_tint");
       const uSelectedLoc = gl.getUniformLocation(this.vehicleProg, "u_isSelected");
@@ -1475,6 +1702,7 @@ export class WebGLOverlay {
       const uAlphaLoc = gl.getUniformLocation(this.vehicleProg, "u_alpha");
       const vBri = Math.max(0.84, opts.vehicleBrightness);
 
+      gl.uniform1f(uWheelRollLoc, 0);
       gl.uniform1f(uGhostLoc, 0);
       gl.uniform1f(uOutlineExpandLoc, 0);
       gl.uniform1f(uIsOutlineLoc, 0);
@@ -1700,25 +1928,140 @@ export class WebGLOverlay {
         gl.depthMask(true);
         gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_depthBiasM"), 0.14);
       }
+
+      // 2h-3D. Cosmo Clock 21 true 3D plinth, splayed A-frame legs, rotating twin truss wheel & 24 gondolas
+      if (hasCosmoClock && opts.cosmoClock) {
+        const cosmo = opts.cosmoClock;
+        const baseLocal = wgs84ToLocal(
+          c,
+          COSMO_CLOCK_ORIGIN.lon,
+          COSMO_CLOCK_ORIGIN.lat,
+          0,
+        );
+        const hubLocal: readonly [number, number, number] = [
+          baseLocal[0],
+          baseLocal[1],
+          baseLocal[2] + COSMO_CLOCK_ORIGIN.hubElevM,
+        ];
+        const normalRad = (COSMO_CLOCK_ORIGIN.faceNormalAzimuthDeg * Math.PI) / 180;
+        const wheelRightLocal: readonly [number, number, number] = [
+          -Math.cos(normalRad),
+          Math.sin(normalRad),
+          0,
+        ];
+
+        gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_depthBiasM"), 28.0);
+        gl.uniform1f(uSelectedLoc, 0);
+        gl.uniform1f(uGhostLoc, 0);
+
+        if (!opts.xrayOcclusion) {
+          gl.depthMask(false);
+          gl.bindVertexArray(this.cosmoShadowMesh.vao);
+          gl.uniform3f(uOriginLoc, baseLocal[0], baseLocal[1], baseLocal[2]);
+          gl.uniform1f(uHeadingLoc, normalRad);
+          gl.uniform1f(uWheelRollLoc, 0);
+          gl.uniform3f(uScaleLoc, 1, 1, 1);
+          gl.uniform3f(uTintLoc, 1, 1, 1);
+          gl.uniform1f(uAlphaLoc, Math.max(0.06, 0.24 * (1 - opts.nightIntensity * 0.65)));
+          gl.drawArrays(gl.TRIANGLES, 0, this.cosmoShadowMesh.count);
+          gl.depthMask(true);
+        }
+
+        // 3D stepped plinth, splayed A-frame legs & hub axle drum
+        gl.bindVertexArray(this.cosmoStructureMesh.vao);
+        gl.uniform3f(uOriginLoc, baseLocal[0], baseLocal[1], baseLocal[2]);
+        gl.uniform1f(uHeadingLoc, normalRad);
+        gl.uniform1f(uWheelRollLoc, 0);
+        gl.uniform3f(uScaleLoc, 1, 1, 1);
+        gl.uniform3f(uTintLoc, vBri, vBri, vBri);
+        gl.uniform1f(uAlphaLoc, 1.0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.cosmoStructureMesh.count);
+
+        gl.uniform1f(uOutlineExpandLoc, 0.35);
+        gl.uniform1f(uIsOutlineLoc, 1);
+        gl.drawArrays(gl.TRIANGLES, 0, this.cosmoStructureMesh.count);
+        gl.uniform1f(uOutlineExpandLoc, 0);
+        gl.uniform1f(uIsOutlineLoc, 0);
+
+        // 3D rotating twin truss wheel
+        gl.bindVertexArray(this.cosmoWheelMesh.vao);
+        gl.uniform3f(uOriginLoc, hubLocal[0], hubLocal[1], hubLocal[2]);
+        gl.uniform1f(uHeadingLoc, normalRad);
+        gl.uniform1f(uWheelRollLoc, cosmo.wheelAngleRad);
+        gl.uniform3f(uScaleLoc, 1, 1, 1);
+        gl.uniform3f(uTintLoc, vBri, vBri, vBri);
+        gl.uniform1f(uAlphaLoc, 1.0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.cosmoWheelMesh.count);
+
+        gl.uniform1f(uOutlineExpandLoc, 0.28);
+        gl.uniform1f(uIsOutlineLoc, 1);
+        gl.drawArrays(gl.TRIANGLES, 0, this.cosmoWheelMesh.count);
+        gl.uniform1f(uOutlineExpandLoc, 0);
+        gl.uniform1f(uIsOutlineLoc, 0);
+
+        // 24 upright 3D hanging passenger gondolas
+        const gondolaMesh =
+          opts.nightIntensity > 0.35
+            ? this.cosmoGondolaMeshes.night
+            : this.cosmoGondolaMeshes.day;
+        gl.bindVertexArray(gondolaMesh.vao);
+        gl.uniform1f(uHeadingLoc, normalRad);
+        gl.uniform1f(uWheelRollLoc, 0);
+        gl.uniform3f(uScaleLoc, 1, 1, 1);
+        gl.uniform3f(uTintLoc, vBri, vBri, vBri);
+        gl.uniform1f(uAlphaLoc, 1.0);
+        const gondolaOrbitR = 46.5;
+        for (let i = 0; i < 24; i++) {
+          const ang = (i / 24) * Math.PI * 2 + cosmo.wheelAngleRad;
+          const ca = Math.cos(ang) * gondolaOrbitR;
+          const sa = Math.sin(ang) * gondolaOrbitR;
+          gl.uniform3f(
+            uOriginLoc,
+            hubLocal[0] + wheelRightLocal[0] * ca,
+            hubLocal[1] + wheelRightLocal[1] * ca,
+            hubLocal[2] + sa,
+          );
+          gl.drawArrays(gl.TRIANGLES, 0, gondolaMesh.count);
+          if (imgPxPerCssPx < 7.5) {
+            gl.uniform1f(uOutlineExpandLoc, 0.14);
+            gl.uniform1f(uIsOutlineLoc, 1);
+            gl.drawArrays(gl.TRIANGLES, 0, gondolaMesh.count);
+            gl.uniform1f(uOutlineExpandLoc, 0);
+            gl.uniform1f(uIsOutlineLoc, 0);
+          }
+        }
+
+        gl.uniform1f(uWheelRollLoc, 0);
+        gl.uniform1f(gl.getUniformLocation(this.vehicleProg, "u_depthBiasM"), 0.14);
+      }
     }
 
-    // 2h. Cosmo Clock 21 animated 3D Ferris wheel + night LED illumination + live JST clock
-    if (opts.showCosmoClock !== false && opts.cosmoClock) {
+    // 2h. Cosmo Clock 21 live JST front clock face + nighttime LED illumination overlay
+    if (hasCosmoClock && opts.cosmoClock) {
       const c = this.camera;
       const cosmo = opts.cosmoClock;
-      const rawHub = wgs84ToLocal(
+      const hubLocal = wgs84ToLocal(
         c,
         COSMO_CLOCK_ORIGIN.lon,
         COSMO_CLOCK_ORIGIN.lat,
         COSMO_CLOCK_ORIGIN.hubElevM,
       );
-      // Offset 14m toward camera along -forward so the wheel stands clean against skyline/sky
-      const hubPos: readonly [number, number, number] = [
-        rawHub[0] - c.basis.forward[0] * 14,
-        rawHub[1] - c.basis.forward[1] * 14,
-        rawHub[2] - c.basis.forward[2] * 14,
+      const normalRad = (COSMO_CLOCK_ORIGIN.faceNormalAzimuthDeg * Math.PI) / 180;
+      const frontNormal: readonly [number, number, number] = [
+        Math.sin(normalRad),
+        Math.cos(normalRad),
+        0,
       ];
-      const az = (COSMO_CLOCK_ORIGIN.planeAzimuthDeg * Math.PI) / 180;
+      const wheelRightLocal: readonly [number, number, number] = [
+        -Math.cos(normalRad),
+        Math.sin(normalRad),
+        0,
+      ];
+      const clockCenter: readonly [number, number, number] = [
+        hubLocal[0] + frontNormal[0] * 7.5,
+        hubLocal[1] + frontNormal[1] * 7.5,
+        hubLocal[2],
+      ];
 
       gl.disable(gl.DEPTH_TEST);
       gl.useProgram(this.cosmoProg);
@@ -1748,14 +2091,14 @@ export class WebGLOverlay {
       );
       gl.uniform3f(
         gl.getUniformLocation(this.cosmoProg, "u_centerLocalM"),
-        hubPos[0],
-        hubPos[1],
-        hubPos[2],
+        clockCenter[0],
+        clockCenter[1],
+        clockCenter[2],
       );
       gl.uniform3f(
         gl.getUniformLocation(this.cosmoProg, "u_wheelRightLocal"),
-        Math.sin(az),
-        Math.cos(az),
+        wheelRightLocal[0],
+        wheelRightLocal[1],
         0,
       );
       gl.uniform1f(

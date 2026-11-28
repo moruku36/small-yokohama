@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFullYokohamaCamera } from "@small-yokohama/core";
-import { resolveCosmoClockState } from "../data/cosmoClock.js";
+import { COSMO_CLOCK_ORIGIN, resolveCosmoClockState } from "../data/cosmoClock.js";
 import {
   pickRideAlongCarId,
   resolveRideAlongCar,
@@ -19,6 +19,7 @@ import {
   OVERLAY_FRAG,
   PEDESTRIAN_FRAG,
   PEDESTRIAN_VERT,
+  VEHICLE_VERT,
 } from "../viewer/shaders.js";
 
 const JA_REGEX = /[\u3040-\u30ff\u3400-\u9fff]/;
@@ -185,10 +186,14 @@ describe("Phase 3: Ride Along, Cosmo Clock 21, walking umbrellas, water shimmer 
     };
 
     const segCalls = extractCallArgs(COSMO_FRAG, "cSegDist", true);
-    expect(segCalls.length).toBeGreaterThanOrEqual(9);
+    expect(segCalls.length).toBeGreaterThanOrEqual(7);
     for (const args of segCalls) {
       expect(args).toHaveLength(3);
     }
+
+    expect(VEHICLE_VERT).toContain("u_wheelRollRad");
+    expect(COSMO_CLOCK_ORIGIN.faceNormalAzimuthDeg).toBeGreaterThanOrEqual(10);
+    expect(COSMO_CLOCK_ORIGIN.faceNormalAzimuthDeg).toBeLessThanOrEqual(40);
 
     const numLiteral = /^-?\d+(?:\.\d+)?$/;
     for (const src of [COSMO_FRAG, OVERLAY_FRAG]) {
