@@ -5,6 +5,10 @@ import {
 } from "@small-yokohama/core";
 import type { ResolvedAirCabinGondola } from "../data/airCabinFeed.js";
 import { resolveCosmoClockState } from "../data/cosmoClock.js";
+import {
+  resolveSelectedGoogleMapsLinks,
+  type GoogleMapsTarget,
+} from "../data/googleMapsLinks.js";
 import type { ResolvedPlane } from "../data/planeFeed.js";
 import type { LoadedReleaseBundle } from "../data/releaseLoader.js";
 import { resolveStationDepartures } from "../data/stationDepartures.js";
@@ -43,6 +47,13 @@ export type BooleanOptionKey =
   | "showDeckTestPoint"
   | "reducedMotion";
 
+export interface StreetViewModalState {
+  title: string;
+  subtitle: string;
+  embedUrl: string;
+  externalUrl: string;
+}
+
 export interface UiHandlers {
   onSetTab: (tab: DropTab) => void;
   onSearchQuery: (q: string) => void;
@@ -73,6 +84,8 @@ export interface UiHandlers {
   onClearSelection: () => void;
   onToggleSound: () => void;
   onToggleFollow: () => void;
+  onOpenStreetView?: (modal: StreetViewModalState) => void;
+  onCloseStreetView?: () => void;
 }
 
 function escapeHtml(text: string): string {
@@ -81,13 +94,6 @@ function escapeHtml(text: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
-
-function buildGoogleMapsUrl(lat: number, lon: number, label?: string): string {
-  const q = label
-    ? `${label} ${lat.toFixed(6)},${lon.toFixed(6)}`
-    : `${lat.toFixed(6)},${lon.toFixed(6)}`;
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 }
 
 export function renderBar(
@@ -764,7 +770,7 @@ export function renderCard(
   let bodyNote = "";
   let extraBlockHtml = "";
   let rowsHtml = "";
-  let gmapsUrl = "";
+  let gmapsTarget: GoogleMapsTarget = { lat: 35.4526, lon: 139.6429 };
 
   if (sel.kind === "vehicle") {
     const liveMatch = feed?.vehicles.find((rv) => rv.record.entityId === sel.vehicle.entityId);
@@ -791,7 +797,7 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.drift)}</dt>
       <dd>${driftCssPx.toFixed(3)} px</dd>
     `;
-    gmapsUrl = buildGoogleMapsUrl(v.lat, v.lon, title);
+    gmapsTarget = { lat: v.lat, lon: v.lon, label: title, headingDeg: v.bearingDeg };
   } else if (sel.kind === "train") {
     const tr = trains.find((x) => x.id === sel.train.id) ?? sel.train;
     const modeLabel = d.modeLabels[tr.mode];
@@ -812,7 +818,12 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>${escapeHtml(state.lang === "en" ? tr.sourceEn : tr.sourceJa)}</dd>
     `;
-    gmapsUrl = buildGoogleMapsUrl(tr.lat, tr.lon, state.lang === "en" ? tr.lineNameEn : tr.lineNameJa);
+    gmapsTarget = {
+      lat: tr.lat,
+      lon: tr.lon,
+      label: state.lang === "en" ? tr.lineNameEn : tr.lineNameJa,
+      headingDeg: tr.bearingDeg,
+    };
   } else if (sel.kind === "plane") {
     const p = planes.find((x) => x.id === sel.plane.id) ?? sel.plane;
     const modeLabel = d.modeLabels[p.mode];
@@ -844,7 +855,13 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>${escapeHtml(state.lang === "en" ? p.sourceEn : p.sourceJa)}</dd>
     `;
-    gmapsUrl = buildGoogleMapsUrl(p.lat, p.lon, p.callsign);
+    gmapsTarget = {
+      lat: p.lat,
+      lon: p.lon,
+      label: p.callsign,
+      allowStreetView: false,
+      allowDirections: false,
+    };
   } else if (sel.kind === "aircabin") {
     const c = airCabins.find((x) => x.id === sel.cabin.id) ?? sel.cabin;
     title = `${d.airCabinName} #${c.cabinNumber}`;
@@ -862,7 +879,7 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>OpenStreetMap / SENYO</dd>
     `;
-    gmapsUrl = buildGoogleMapsUrl(c.lat, c.lon, d.airCabinName);
+    gmapsTarget = { lat: c.lat, lon: c.lon, label: d.airCabinName, headingDeg: c.bearingDeg };
   } else if (sel.kind === "ridealong") {
     const car = sel.car;
     title = state.lang === "en" ? car.labelEn : car.labelJa;
@@ -881,7 +898,7 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>OpenStreetMap / Yokohama Road Network</dd>
     `;
-    gmapsUrl = buildGoogleMapsUrl(car.lat, car.lon, title);
+    gmapsTarget = { lat: car.lat, lon: car.lon, label: title, headingDeg: car.bearingDeg };
   } else if (sel.kind === "landmark") {
     const lm = sel.landmark;
     title = state.lang === "en" ? lm.nameEn : lm.nameJa;
@@ -917,7 +934,7 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>${escapeHtml(formatSourceKind(lm.sourceKind, state.lang))}</dd>
     `;
-    gmapsUrl = lm.googleMapsUrl ?? buildGoogleMapsUrl(lm.lat, lm.lon, title);
+    gmapsTarget = { lat: lm.lat, lon: lm.lon, label: title, customMapsUrl: lm.googleMapsUrl };
   } else if (sel.kind === "poi") {
     const p = sel.poi;
     title = (state.lang === "en" ? p.nameEn : p.nameJa) || p.nameJa || p.nameEn;
@@ -941,7 +958,12 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>OpenStreetMap${p.osmId ? ` (#${p.osmId})` : ""}</dd>
     `;
-    gmapsUrl = p.googleMapsUrl || buildGoogleMapsUrl(p.lat, p.lon, title);
+    gmapsTarget = {
+      lat: p.lat,
+      lon: p.lon,
+      label: title,
+      customMapsUrl: p.googleMapsUrl || undefined,
+    };
   } else if (sel.kind === "feature") {
     const f = sel.feature;
     const kindLabel = f.buildingType
@@ -978,7 +1000,7 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>${escapeHtml(formatSourceKind(f.source, state.lang))}${f.osmId ? ` (#${f.osmId})` : ""}</dd>
     `;
-    gmapsUrl = f.googleMapsUrl ?? buildGoogleMapsUrl(sel.lat, sel.lon, title);
+    gmapsTarget = { lat: sel.lat, lon: sel.lon, label: title, customMapsUrl: f.googleMapsUrl };
   } else {
     const pcLive =
       feed?.portCalls.find((x) => x.id === sel.portCall.id) ?? sel.portCall;
@@ -1009,8 +1031,29 @@ export function renderCard(
       <dt>${escapeHtml(d.fields.source)}</dt>
       <dd>${escapeHtml(pcLive.source)}</dd>
     `;
-    gmapsUrl = buildGoogleMapsUrl(pcLive.lat, pcLive.lon, title);
+    gmapsTarget = { lat: pcLive.lat, lon: pcLive.lon, label: title };
   }
+
+  const gLinks = resolveSelectedGoogleMapsLinks(gmapsTarget, state.lang);
+  const svIconSvg = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7.5" r="3.2"/><path d="M7.5 15.5c1-2.5 8-2.5 9 0"/><path d="M5 17.5a7 2.8 0 1 0 14 0"/></svg>`;
+  const mapIconSvg = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-10.5a6 6 0 1 0-12 0C6 15.8 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></svg>`;
+
+  const streetViewActionHtml = gLinks.streetViewUrl
+    ? gLinks.streetViewEmbedUrl
+      ? `<button type="button" class="gmaps-btn primary" id="btn-streetview">${svIconSvg}<span>${escapeHtml(d.openStreetViewInline)}</span></button>`
+      : `<a class="gmaps-btn primary" id="link-streetview" href="${escapeHtml(gLinks.streetViewUrl)}" target="_blank" rel="noopener noreferrer">${svIconSvg}<span>${escapeHtml(d.openStreetView)}</span></a>`
+    : "";
+
+  const directionsHtml = gLinks.directions
+    ? `<div class="gmaps-dir-row">
+        <span class="gmaps-dir-label">${escapeHtml(d.directionsLabel)}</span>
+        <div class="gmaps-dir-pills">
+          <a class="gmaps-dir-pill" id="link-dir-walking" href="${escapeHtml(gLinks.directions.walking)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.directionsModes.walking)}</a>
+          <a class="gmaps-dir-pill" id="link-dir-transit" href="${escapeHtml(gLinks.directions.transit)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.directionsModes.transit)}</a>
+          <a class="gmaps-dir-pill" id="link-dir-driving" href="${escapeHtml(gLinks.directions.driving)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.directionsModes.driving)}</a>
+        </div>
+      </div>`
+    : "";
 
   el.innerHTML = `
     <div class="card-eyebrow">${escapeHtml(d.selectedEyebrow)}</div>
@@ -1045,7 +1088,13 @@ export function renderCard(
     }
     ${extraBlockHtml}
     <dl class="card-dl">${rowsHtml}</dl>
-    <a class="gmaps-link" href="${escapeHtml(gmapsUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.openGoogleMaps)}</a>
+    <div class="gmaps-panel">
+      <div class="gmaps-actions">
+        ${streetViewActionHtml}
+        <a class="gmaps-btn" id="link-gmaps" href="${escapeHtml(gLinks.placeUrl)}" target="_blank" rel="noopener noreferrer">${mapIconSvg}<span>${escapeHtml(d.openGoogleMapsShort)}</span></a>
+      </div>
+      ${directionsHtml}
+    </div>
   `;
 
   el.querySelector("#btn-card-close")?.addEventListener("click", handlers.onClearSelection);
@@ -1053,6 +1102,63 @@ export function renderCard(
   el.querySelector("#btn-switch-ride")?.addEventListener("click", () =>
     handlers.onSwitchRideAlong?.(),
   );
+  if (gLinks.streetViewEmbedUrl && gLinks.streetViewUrl) {
+    el.querySelector("#btn-streetview")?.addEventListener("click", () => {
+      handlers.onOpenStreetView?.({
+        title,
+        subtitle: `${gmapsTarget.lat.toFixed(5)}, ${gmapsTarget.lon.toFixed(5)}`,
+        embedUrl: gLinks.streetViewEmbedUrl!,
+        externalUrl: gLinks.streetViewUrl!,
+      });
+    });
+  }
+}
+
+export function renderStreetViewModal(
+  modalEl: HTMLElement | null,
+  sv: StreetViewModalState | null,
+  lang: Lang,
+  onClose: () => void,
+): void {
+  if (!modalEl) return;
+  if (!sv) {
+    modalEl.hidden = true;
+    modalEl.innerHTML = "";
+    delete modalEl.dataset.renderedKey;
+    return;
+  }
+
+  const key = `${lang}|${sv.embedUrl}`;
+  modalEl.hidden = false;
+  if (modalEl.dataset.renderedKey === key && modalEl.querySelector(".sv-iframe")) {
+    return;
+  }
+  modalEl.dataset.renderedKey = key;
+
+  const d = getDict(lang);
+  modalEl.innerHTML = `
+    <div class="modal-card sv-modal-card" role="dialog" aria-modal="true" aria-label="${escapeHtml(d.streetViewModalTitle)}: ${escapeHtml(sv.title)}">
+      <div class="card-head" style="position:relative;">
+        <div>
+          <div class="card-eyebrow">${escapeHtml(d.streetViewModalTitle)}</div>
+          <h2 class="card-title" style="margin-bottom:2px;">${escapeHtml(sv.title)}</h2>
+          <p class="card-sub">${escapeHtml(sv.subtitle)}</p>
+        </div>
+        <button type="button" class="card-close" id="btn-close-sv" aria-label="${escapeHtml(d.closeLabel)}">×</button>
+      </div>
+      <div class="sv-frame-wrap">
+        <iframe class="sv-iframe" src="${escapeHtml(sv.embedUrl)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" title="${escapeHtml(d.streetViewModalTitle)}: ${escapeHtml(sv.title)}"></iframe>
+      </div>
+      <div class="sv-foot">
+        <a class="gmaps-btn" href="${escapeHtml(sv.externalUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.streetViewExternal)}</a>
+      </div>
+    </div>
+  `;
+
+  modalEl.querySelector("#btn-close-sv")?.addEventListener("click", onClose);
+  modalEl.onclick = (e) => {
+    if (e.target === modalEl) onClose();
+  };
 }
 
 export function renderStatus(
@@ -1193,8 +1299,8 @@ export function renderCreditAndAboutModal(
   const notice = state.lang === "en" ? bundle.release.sceneNotice.en : bundle.release.sceneNotice.ja;
   const apiNote =
     state.lang === "en"
-      ? "OpenStreetMap API v0.6 / ODbL geometry and POIs require no API registration. Google Maps links open standard Search deep-links (key-free). Optional live Yokohama bus feeds use ODPT_ACCESS_TOKEN in collector/."
-      : "OpenStreetMap API v0.6 (ODbL) の建物形状・道路・海岸線・POIは API キー登録なしで取得・反映しています。Google マップへのリンクは標準の検索ディープリンクを使用（キー不要）、横浜市営バスの実測連携のみ ODPT API トークン登録が任意で必要です。";
+      ? "OpenStreetMap API v0.6 / ODbL geometry and POIs require no API registration. Google Maps Place Search, Street View panorama, and transit/walking/driving Directions buttons use official key-free Maps URLs (plus optional Google Maps Embed API for inline 360° preview). Optional live Yokohama bus feeds use ODPT_ACCESS_TOKEN in collector/."
+      : "OpenStreetMap API v0.6 (ODbL) の建物形状・道路・海岸線・POIは API キー登録なしで取得・反映しています。詳細カードの Google マップ・ストリートビュー・経路案内はキー不要・無料・利用規約準拠の公式 Maps URL（および任意の Google Maps Embed API によるアプリ内360°プレビュー）を使用し、横浜市営バスの実測連携のみ ODPT API トークン登録が任意で必要です。";
 
   const tileMethodNote =
     state.lang === "en"

@@ -70,7 +70,9 @@ import {
   renderDrop,
   renderSq,
   renderStatus,
+  renderStreetViewModal,
   type BooleanOptionKey,
+  type StreetViewModalState,
   type UiHandlers,
 } from "./ui/renderUi.js";
 import { CloudIntro } from "./viewer/CloudIntro.js";
@@ -111,6 +113,7 @@ async function bootstrap(): Promise<void> {
   const minimapEl = document.getElementById("minimap");
   const creditEl = document.getElementById("credit")!;
   const aboutModalEl = document.getElementById("about-modal")!;
+  const streetViewModalEl = document.getElementById("streetview-modal");
   const transitLayerEl = document.getElementById("transit-layer");
   const labelLayerEl = document.getElementById("label-layer")!;
   const osdEl = document.getElementById("osd-container")!;
@@ -499,6 +502,7 @@ async function bootstrap(): Promise<void> {
     );
     renderSq(sqEl, state, handlers);
     renderCreditAndAboutModal(creditEl, aboutModalEl, state, bundle, handlers);
+    renderStreetViewModal(streetViewModalEl, activeStreetView, state.lang, closeStreetView);
     syncViewportOverlays();
   };
 
@@ -644,6 +648,18 @@ async function bootstrap(): Promise<void> {
       shipCount: state.showBoats ? resolvedFeed.portCalls.length : 0,
       closeness,
     });
+  };
+
+  let activeStreetView: StreetViewModalState | null = null;
+  const closeStreetView = () => {
+    if (!activeStreetView) return;
+    activeStreetView = null;
+    renderStreetViewModal(streetViewModalEl, null, state.lang, closeStreetView);
+  };
+  const openStreetView = (modal: StreetViewModalState) => {
+    stopTv(false);
+    activeStreetView = modal;
+    renderStreetViewModal(streetViewModalEl, activeStreetView, state.lang, closeStreetView);
   };
 
   const handlers: UiHandlers = {
@@ -808,6 +824,8 @@ async function bootstrap(): Promise<void> {
       });
       renderSq(sqEl, state, handlers);
     },
+    onOpenStreetView: openStreetView,
+    onCloseStreetView: closeStreetView,
     onToggleFollow: () => {
       state.following = !state.following;
       renderCard(
@@ -1025,7 +1043,9 @@ async function bootstrap(): Promise<void> {
       return;
     }
     if (e.key === "Escape") {
-      if (state.aboutOpen) {
+      if (activeStreetView) {
+        closeStreetView();
+      } else if (state.aboutOpen) {
         state.aboutOpen = false;
         refreshUi();
       } else if (state.activeTab) {
@@ -1305,6 +1325,7 @@ async function bootstrap(): Promise<void> {
     }
     window.removeEventListener("keydown", handleKeydown);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
+    closeStreetView();
     soundscape.disable();
   };
   window.addEventListener("pagehide", teardown, { once: true });

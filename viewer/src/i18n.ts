@@ -117,6 +117,13 @@ export interface I18nDict {
   underwayLabel: string;
   berthedLabel: string;
   openGoogleMaps: string;
+  openGoogleMapsShort: string;
+  openStreetView: string;
+  openStreetViewInline: string;
+  streetViewModalTitle: string;
+  streetViewExternal: string;
+  directionsLabel: string;
+  directionsModes: Record<"walking" | "transit" | "driving", string>;
   selectedEyebrow: string;
   placesGroups: {
     landmarks: string;
@@ -288,6 +295,17 @@ const JA: I18nDict = {
   underwayLabel: "航行中",
   berthedLabel: "着岸中",
   openGoogleMaps: "Google マップで開く ↗",
+  openGoogleMapsShort: "Google マップ ↗",
+  openStreetView: "ストリートビュー ↗",
+  openStreetViewInline: "ストリートビュー",
+  streetViewModalTitle: "ストリートビュー",
+  streetViewExternal: "Google マップで開く ↗",
+  directionsLabel: "ここへの経路案内",
+  directionsModes: {
+    walking: "徒歩",
+    transit: "電車・バス",
+    driving: "車",
+  },
   selectedEyebrow: "選択中",
   placesGroups: {
     landmarks: "名所・ランドマーク",
@@ -465,6 +483,17 @@ const EN: I18nDict = {
   underwayLabel: "Underway",
   berthedLabel: "Berthed",
   openGoogleMaps: "Open in Google Maps ↗",
+  openGoogleMapsShort: "Google Maps ↗",
+  openStreetView: "Street View ↗",
+  openStreetViewInline: "Street View",
+  streetViewModalTitle: "Street View",
+  streetViewExternal: "Open in Google Maps ↗",
+  directionsLabel: "Directions here",
+  directionsModes: {
+    walking: "Walk",
+    transit: "Transit",
+    driving: "Drive",
+  },
   selectedEyebrow: "Selected",
   placesGroups: {
     landmarks: "Landmarks",
