@@ -8,6 +8,22 @@ import type { ResolvedFeedState } from "../data/vehicleFeed.js";
 import { formatBuildingType, formatSurfaceKind } from "../i18n.js";
 import type { ViewerState } from "../state.js";
 
+export interface UiRect {
+  l: number;
+  r: number;
+  t: number;
+  b: number;
+}
+
+export function rectIntersectsAny(box: UiRect, obstacles: readonly UiRect[]): boolean {
+  for (const other of obstacles) {
+    if (box.l < other.r && box.r > other.l && box.t < other.b && box.b > other.t) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface ViewportImageBounds {
   topLeft: { x: number; y: number };
   bottomRight: { x: number; y: number };
@@ -53,17 +69,22 @@ const HIDDEN_PIN_CATEGORIES = new Set([
   "pastry",
 ]);
 
-function estimateLabelSize(label: string, tier: 1 | 2 | 3): { w: number; h: number } {
+function estimateLabelSize(
+  label: string,
+  tier: 1 | 2 | 3,
+  isNarrow = false,
+): { w: number; h: number } {
   let asciiCount = 0;
   for (let i = 0; i < label.length; i++) {
     if (label.charCodeAt(i) < 128) asciiCount++;
   }
   const wideCount = label.length - asciiCount;
-  const charPx = tier === 1 ? 14.5 : 13.5;
-  const textPx = wideCount * charPx + asciiCount * 7.8;
+  const charPx = isNarrow ? (tier === 1 ? 12.6 : 11.8) : tier === 1 ? 14.5 : 13.5;
+  const asciiPx = isNarrow ? 6.9 : 7.8;
+  const textPx = wideCount * charPx + asciiCount * asciiPx;
   return {
-    w: Math.ceil(textPx + 22),
-    h: tier === 1 ? 30 : 28,
+    w: Math.ceil(textPx + (isNarrow ? 18 : 22)),
+    h: isNarrow ? (tier === 1 ? 25 : 24) : tier === 1 ? 30 : 28,
   };
 }
 
@@ -234,6 +255,7 @@ export class LabelLayer {
     planes: readonly ResolvedPlane[] = [],
     airCabins: readonly ResolvedAirCabinGondola[] = [],
     rideCar: ResolvedRideAlongCar | null = null,
+    uiObstacles: readonly UiRect[] = [],
   ): void {
     if (!bounds) {
       if (container.childElementCount > 0) {
@@ -249,6 +271,9 @@ export class LabelLayer {
       return;
     }
 
+    const obsKey = uiObstacles
+      .map((o) => `${Math.round(o.l)},${Math.round(o.t)},${Math.round(o.r)},${Math.round(o.b)}`)
+      .join(";");
     const selAnchor = this.resolveSelectedAnchor(bundle, state, feed, trains, planes, airCabins, rideCar);
     const renderKey = [
       state.lang,
@@ -261,6 +286,7 @@ export class LabelLayer {
       bounds.heightCssPx,
       bounds.zoom.toFixed(2),
       selAnchor?.id ?? "",
+      obsKey,
     ].join("|");
 
     if (renderKey === this.lastRenderKey) {
@@ -270,35 +296,38 @@ export class LabelLayer {
 
     const isNarrow = bounds.widthCssPx <= 700;
     const frag = document.createDocumentFragment();
-    const placedBoxes: Array<{ l: number; r: number; t: number; b: number }> = [
-      // Avoid top-left #bar pill
-      { l: 0, r: Math.min(bounds.widthCssPx - 64, 520), t: 0, b: 68 },
-      // Avoid top-right #sq stack
-      {
-        l: Math.max(0, bounds.widthCssPx - 72),
-        r: bounds.widthCssPx,
-        t: 0,
-        b: 290,
-      },
-      // Avoid bottom-left #status bar
-      {
-        l: 0,
-        r: isNarrow ? bounds.widthCssPx : Math.min(bounds.widthCssPx, 640),
-        t: Math.max(0, bounds.heightCssPx - 68),
-        b: bounds.heightCssPx,
-      },
-      // Avoid bottom-right minimap on desktop
-      ...(!isNarrow
-        ? [
+    const placedBoxes: UiRect[] =
+      uiObstacles.length > 0
+        ? [...uiObstacles]
+        : [
+            // Avoid top-left #bar pill
+            { l: 0, r: Math.min(bounds.widthCssPx - 64, 520), t: 0, b: isNarrow ? 90 : 68 },
+            // Avoid top-right #sq stack
             {
-              l: Math.max(0, bounds.widthCssPx - 236),
+              l: Math.max(0, bounds.widthCssPx - 72),
               r: bounds.widthCssPx,
-              t: Math.max(0, bounds.heightCssPx - 120),
+              t: 0,
+              b: 290,
+            },
+            // Avoid bottom-left #status bar
+            {
+              l: 0,
+              r: isNarrow ? bounds.widthCssPx : Math.min(bounds.widthCssPx, 640),
+              t: Math.max(0, bounds.heightCssPx - (isNarrow ? 92 : 68)),
               b: bounds.heightCssPx,
             },
-          ]
-        : []),
-    ];
+            // Avoid bottom-right minimap on desktop
+            ...(!isNarrow
+              ? [
+                  {
+                    l: Math.max(0, bounds.widthCssPx - 236),
+                    r: bounds.widthCssPx,
+                    t: Math.max(0, bounds.heightCssPx - 120),
+                    b: bounds.heightCssPx,
+                  },
+                ]
+              : []),
+          ];
 
     if (selAnchor) {
       const sx = ((selAnchor.px - bounds.topLeft.x) / spanX) * bounds.widthCssPx;
@@ -309,7 +338,7 @@ export class LabelLayer {
         sy >= 24 &&
         sy <= bounds.heightCssPx - 12
       ) {
-        const size = estimateLabelSize(selAnchor.label, 1);
+        const size = estimateLabelSize(selAnchor.label, 1, isNarrow);
         placedBoxes.push({
           l: sx - size.w * 0.5 - 16,
           r: sx + size.w * 0.5 + 16,
@@ -364,23 +393,24 @@ export class LabelLayer {
           continue;
         }
 
-        const size = estimateLabelSize(item.label, item.poi.tier);
-        const pad = 12;
-        const box = {
+        const size = estimateLabelSize(item.label, item.poi.tier, isNarrow);
+        const pad = isNarrow ? 8 : 12;
+        const box: UiRect = {
           l: cssX - size.w * 0.5 - pad,
           r: cssX + size.w * 0.5 + pad,
           t: cssY - size.h - 8 - pad,
           b: cssY + pad,
         };
 
-        let collides = false;
-        for (const other of placedBoxes) {
-          if (box.l < other.r && box.r > other.l && box.t < other.b && box.b > other.t) {
-            collides = true;
-            break;
-          }
+        if (
+          box.l < 6 ||
+          box.r > bounds.widthCssPx - 6 ||
+          box.t < 6 ||
+          box.b > bounds.heightCssPx - 6 ||
+          rectIntersectsAny(box, placedBoxes)
+        ) {
+          continue;
         }
-        if (collides) continue;
 
         placedBoxes.push(box);
         const btn = document.createElement("button");

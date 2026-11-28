@@ -60,7 +60,7 @@ import {
   type ViewerState,
 } from "./state.js";
 import { HoverTip, describePick } from "./ui/HoverTip.js";
-import { LabelLayer } from "./ui/LabelLayer.js";
+import { LabelLayer, type UiRect } from "./ui/LabelLayer.js";
 import { Minimap } from "./ui/Minimap.js";
 import { TransitBadgeLayer } from "./ui/TransitBadgeLayer.js";
 import {
@@ -121,7 +121,7 @@ async function bootstrap(): Promise<void> {
 
   // The opening: cloud covers the map while it loads, then the camera falls through it
   const bootParams = new URLSearchParams(window.location.search);
-  const bootLang = bootParams.get("lang") === "en" ? "en" : "ja";
+  const bootLang = bootParams.get("lang") === "ja" ? "ja" : "en";
   statusEl.innerHTML = `<span class="g loading">${getDict(bootLang).loadingCity}</span>`;
   let cloudIntro: CloudIntro | null = null;
   const reducedAtBoot = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -383,6 +383,31 @@ async function bootstrap(): Promise<void> {
     if (car) selectRideAlong(car, true);
   };
 
+  const measureUiObstacles = (): UiRect[] => {
+    const pad = 6;
+    const rects: UiRect[] = [];
+    const chromeEls: Array<HTMLElement | null> = [barEl, statusEl, sqEl, minimapEl];
+    for (const el of chromeEls) {
+      if (!el || el.hidden) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      rects.push({
+        l: r.left - pad,
+        r: r.right + pad,
+        t: r.top - pad,
+        b: r.bottom + pad,
+      });
+    }
+    return rects;
+  };
+
+  const syncUiLayoutMetrics = () => {
+    const barRect = barEl.getBoundingClientRect();
+    if (barRect.bottom > 0) {
+      document.documentElement.style.setProperty("--bar-bottom", `${Math.ceil(barRect.bottom + 8)}px`);
+    }
+  };
+
   const syncTransitBadges = () => {
     if (!mapViewer) return;
     const bounds = mapViewer.getViewportInfo();
@@ -400,12 +425,14 @@ async function bootstrap(): Promise<void> {
       resolvedAirCabins,
       selectPlane,
       selectAirCabin,
+      measureUiObstacles(),
     );
   };
 
   const syncViewportOverlays = () => {
     if (!mapViewer) return;
     const bounds = mapViewer.getViewportInfo();
+    const uiObstacles = measureUiObstacles();
     labelLayer.render(
       labelLayerEl,
       bundle,
@@ -417,6 +444,7 @@ async function bootstrap(): Promise<void> {
       resolvedPlanes,
       resolvedAirCabins,
       activeRideCar,
+      uiObstacles,
     );
     transitLayer.render(
       transitLayerEl,
@@ -432,6 +460,7 @@ async function bootstrap(): Promise<void> {
       resolvedAirCabins,
       selectPlane,
       selectAirCabin,
+      uiObstacles,
     );
     minimap?.render(state, bounds);
   };
@@ -503,6 +532,7 @@ async function bootstrap(): Promise<void> {
     renderSq(sqEl, state, handlers);
     renderCreditAndAboutModal(creditEl, aboutModalEl, state, bundle, handlers);
     renderStreetViewModal(streetViewModalEl, activeStreetView, state.lang, closeStreetView);
+    syncUiLayoutMetrics();
     syncViewportOverlays();
   };
 
@@ -938,6 +968,7 @@ async function bootstrap(): Promise<void> {
     onMapLoadStateChange: (loadState) => {
       mapLoadState = loadState;
       updateStatus();
+      syncViewportOverlays();
       if (loadState !== "loading" && cloudIntro) {
         const intro = cloudIntro;
         cloudIntro = null;
@@ -1073,7 +1104,12 @@ async function bootstrap(): Promise<void> {
       handlers.onTogglePlay();
     }
   };
-  window.addEventListener("keydown", handleKeydown);
+    window.addEventListener("keydown", handleKeydown);
+    const handleWindowResize = () => {
+      syncUiLayoutMetrics();
+      syncViewportOverlays();
+    };
+    window.addEventListener("resize", handleWindowResize);
 
   every(() => {
     if (state.feedPreset === "live" && !document.hidden) {
@@ -1295,6 +1331,7 @@ async function bootstrap(): Promise<void> {
             resolvedPlanes,
             resolvedAirCabins,
             activeRideCar,
+            measureUiObstacles(),
           );
         }
         updateStatus(wState.statusText);
@@ -1324,6 +1361,7 @@ async function bootstrap(): Promise<void> {
       rafId = 0;
     }
     window.removeEventListener("keydown", handleKeydown);
+    window.removeEventListener("resize", handleWindowResize);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     closeStreetView();
     soundscape.disable();

@@ -97,8 +97,14 @@ describe("Viewport overlay synchronization & bounded share URLs", () => {
       dayNow,
     );
     expect(defaults.theme).toBe("light");
+    expect(defaults.lang).toBe("en");
     expect(defaults.sunHourJst).toBeNull();
     expect(defaults.cameraView.zoom).toBe(2.25);
+    expect(new URL(serializeShareUrl(defaults, "https://small-yokohama.example/", cam)).searchParams.has("lang")).toBe(false);
+
+    const jaState = createInitialViewerState(cam, "?lang=ja", false);
+    expect(jaState.lang).toBe("ja");
+    expect(serializeShareUrl(jaState, "https://small-yokohama.example/", cam)).toContain("lang=ja");
 
     const nightDefaults = createInitialViewerState(
       cam,

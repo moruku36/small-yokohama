@@ -14,6 +14,7 @@ export interface I18nDict {
   navCopied: string;
   navAbout: string;
   navLang: string;
+  navLangTip: string;
   searchPlaceholder: string;
   searchEmpty: string;
   layerTrains: string;
@@ -173,6 +174,7 @@ const JA: I18nDict = {
   navCopied: "コピー済",
   navAbout: "概要",
   navLang: "EN",
+  navLangTip: "英語に切り替え",
   searchPlaceholder: "建物・名所・通り・駅を検索 (/)",
   searchEmpty: "該当する施設が見つかりませんでした",
   layerTrains: "電車（JR・京急・相鉄）",
@@ -361,6 +363,7 @@ const EN: I18nDict = {
   navCopied: "Copied",
   navAbout: "About",
   navLang: "JA",
+  navLangTip: "Switch to Japanese",
   searchPlaceholder: "Find a building, landmark or street (/)",
   searchEmpty: "No matching places found",
   layerTrains: "Trains (JR / Keikyu / Sotetsu)",

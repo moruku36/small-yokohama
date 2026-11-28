@@ -114,7 +114,7 @@ export function renderBar(
       <button type="button" id="btn-ride" class="${state.selected?.kind === "ridealong" ? "active" : ""}" aria-pressed="${state.selected?.kind === "ridealong"}" ${hasWebGLOverlay ? "" : `disabled title="${escapeHtml(d.overlayUnavailable)}"`}>${escapeHtml(d.navRide)}</button>
       <button type="button" id="btn-share">${escapeHtml(d.navShare)}</button>
       <button type="button" id="btn-about" aria-expanded="${state.aboutOpen}">${escapeHtml(d.navAbout)}</button>
-      <button type="button" id="btn-lang">${escapeHtml(d.navLang)}</button>
+      <button type="button" id="btn-lang" title="${escapeHtml(d.navLangTip)}" aria-label="${escapeHtml(d.navLangTip)}">${escapeHtml(d.navLang)}</button>
     </nav>
   `;
 
@@ -1199,7 +1199,7 @@ export function renderStatus(
       ? `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span><span class="live-n">${trainCount}</span> trains</span><span class="g"><span class="live-n">${busCount}</span> buses</span><span class="g"><span class="live-n">${boatCount}</span> ships</span>${planeChip}`
       : `<span class="g"><span class="status-live-sq ${dotCls}" aria-hidden="true"></span>電車 <span class="live-n">${trainCount}</span></span><span class="g">バス <span class="live-n">${busCount}</span></span><span class="g">客船 <span class="live-n">${boatCount}</span></span>${planeChip}`;
 
-  const nextHtml = `<span class="status-when">${escapeHtml(timeText)}</span><span class="status-now"><span class="g">${escapeHtml(skyText)}</span>${countsHtml}${tvSuffix}</span>`;
+  const nextHtml = `<span class="status-head"><span class="status-when">${escapeHtml(timeText)}</span><span class="g">${escapeHtml(skyText)}</span></span><span class="status-counts">${countsHtml}${tvSuffix}</span>`;
   if (el.innerHTML !== nextHtml) {
     el.innerHTML = nextHtml;
   }

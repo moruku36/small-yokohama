@@ -9,7 +9,11 @@ import type {
   ResolvedVehicle,
 } from "../data/vehicleFeed.js";
 import type { ViewerState } from "../state.js";
-import type { ViewportImageBounds } from "./LabelLayer.js";
+import {
+  rectIntersectsAny,
+  type UiRect,
+  type ViewportImageBounds,
+} from "./LabelLayer.js";
 
 const SHIP_ICON_SVG = `<svg viewBox="0 0 16 12" aria-hidden="true"><path d="M2 7h12l-1.5 3.5h-9zM4.5 7V4.2h7V7M6.5 4.2V2.2h3v2"/></svg>`;
 const TRAIN_ICON_SVG = `<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="1.5" width="8" height="7.5" rx="1.6"/><path d="M3.2 4.2h5.6v2.1H3.2z" fill="rgba(16,28,44,0.45)"/><path d="M3.5 9.2 2.4 11M8.5 9.2l1.1 1.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>`;
@@ -66,6 +70,7 @@ export class TransitBadgeLayer {
     airCabins: readonly ResolvedAirCabinGondola[] = [],
     onSelectPlane?: (p: ResolvedPlane) => void,
     onSelectAirCabin?: (c: ResolvedAirCabinGondola) => void,
+    uiObstacles: readonly UiRect[] = [],
   ): void {
     if (!container) return;
     if (!bounds) {
@@ -90,6 +95,50 @@ export class TransitBadgeLayer {
     }
 
     const imgPxPerCssPx = spanX / bounds.widthCssPx;
+    const isNarrow = bounds.widthCssPx <= 700;
+    const effectiveObstacles: readonly UiRect[] =
+      uiObstacles.length > 0
+        ? uiObstacles
+        : [
+            { l: 0, r: Math.min(bounds.widthCssPx - 64, 520), t: 0, b: isNarrow ? 90 : 68 },
+            { l: Math.max(0, bounds.widthCssPx - 68), r: bounds.widthCssPx, t: 0, b: 290 },
+            {
+              l: 0,
+              r: isNarrow ? bounds.widthCssPx : 640,
+              t: Math.max(0, bounds.heightCssPx - (isNarrow ? 92 : 68)),
+              b: bounds.heightCssPx,
+            },
+          ];
+    const fitsClearOfChrome = (
+      cssX: number,
+      cssY: number,
+      w: number,
+      h: number,
+      anchorYOffset: number,
+      isSelected: boolean,
+    ): boolean => {
+      if (isSelected) {
+        return (
+          cssX >= 10 &&
+          cssX <= bounds.widthCssPx - 10 &&
+          cssY >= 12 &&
+          cssY <= bounds.heightCssPx - 10
+        );
+      }
+      const box: UiRect = {
+        l: cssX - w * 0.5,
+        r: cssX + w * 0.5,
+        t: cssY - anchorYOffset - h,
+        b: cssY - anchorYOffset,
+      };
+      return (
+        box.l >= 6 &&
+        box.r <= bounds.widthCssPx - 6 &&
+        box.t >= 6 &&
+        box.b <= bounds.heightCssPx - 6 &&
+        !rectIntersectsAny(box, effectiveObstacles)
+      );
+    };
     const cam = bundle.camera;
     const selVehicleId =
       state.selected?.kind === "vehicle" ? state.selected.vehicle.entityId : null;
@@ -123,16 +172,11 @@ export class TransitBadgeLayer {
         );
         const cssX = ((img.px - bounds.topLeft.x) / spanX) * bounds.widthCssPx;
         const cssY = ((img.py - bounds.topLeft.y) / spanY) * bounds.heightCssPx;
-        if (
-          cssX < 18 ||
-          cssX > bounds.widthCssPx - 18 ||
-          cssY < 58 ||
-          cssY > bounds.heightCssPx - 28
-        ) {
+        const meta = getBusBadgeMeta(v.routeId);
+        const isSel = v.entityId === selVehicleId;
+        if (!fitsClearOfChrome(cssX, cssY, Math.max(30, meta.code.length * 7 + 16), 20, 6, isSel)) {
           continue;
         }
-
-        const isSel = v.entityId === selVehicleId;
         if (
           !isSel &&
           placedBusCoords.some((p) => Math.abs(p.x - cssX) < 30 && Math.abs(p.y - cssY) < 22)
@@ -146,7 +190,6 @@ export class TransitBadgeLayer {
         if (!btn) {
           btn = document.createElement("button");
           btn.type = "button";
-          const meta = getBusBadgeMeta(v.routeId);
           btn.className = `bus-pill ${meta.cls}`;
           btn.textContent = meta.code;
           btn.dataset.vehicleId = v.entityId;
@@ -194,16 +237,15 @@ export class TransitBadgeLayer {
         const img = localToImage(cam, wgs84ToLocal(cam, pc.lon, pc.lat, h * 0.72 + 1.5));
         const cssX = ((img.px - bounds.topLeft.x) / spanX) * bounds.widthCssPx;
         const cssY = ((img.py - bounds.topLeft.y) / spanY) * bounds.heightCssPx;
-        if (
-          cssX < 28 ||
-          cssX > bounds.widthCssPx - 28 ||
-          cssY < 58 ||
-          cssY > bounds.heightCssPx - 56
-        ) {
+        const shortName = getShortBoatName(pc, state.lang);
+        const boatW = Math.min(
+          148,
+          shortName.length * (/[\u3040-\u9fff]/.test(shortName) ? 10.5 : 6.4) + 26,
+        );
+        const isSel = pc.id === selBoatId;
+        if (!fitsClearOfChrome(cssX, cssY, boatW, 20, 8, isSel)) {
           continue;
         }
-
-        const isSel = pc.id === selBoatId;
         const kind = pc.vesselKind ?? "cruise";
         const minSpacingX = imgPxPerCssPx > 4.2 ? 92 : 68;
         if (
@@ -215,7 +257,6 @@ export class TransitBadgeLayer {
         placedBoatCoords.push({ x: cssX, y: cssY });
         activeBoatIds.add(pc.id);
 
-        const shortName = getShortBoatName(pc, state.lang);
         let btn = this.boatButtons.get(pc.id);
         if (!btn) {
           btn = document.createElement("button");
@@ -273,16 +314,10 @@ export class TransitBadgeLayer {
         );
         const cssX = ((img.px - bounds.topLeft.x) / spanX) * bounds.widthCssPx;
         const cssY = ((img.py - bounds.topLeft.y) / spanY) * bounds.heightCssPx;
-        if (
-          cssX < 24 ||
-          cssX > bounds.widthCssPx - 24 ||
-          cssY < 58 ||
-          cssY > bounds.heightCssPx - 56
-        ) {
+        const isSel = tr.id === selTrainId;
+        if (!fitsClearOfChrome(cssX, cssY, Math.max(36, tr.code.length * 7 + 18), 20, 7, isSel)) {
           continue;
         }
-
-        const isSel = tr.id === selTrainId;
         if (
           !isSel &&
           placedTrainCoords.some((p) => Math.abs(p.x - cssX) < 38 && Math.abs(p.y - cssY) < 24)
@@ -341,12 +376,7 @@ export class TransitBadgeLayer {
         );
         const cssX = ((img.px - bounds.topLeft.x) / spanX) * bounds.widthCssPx;
         const cssY = ((img.py - bounds.topLeft.y) / spanY) * bounds.heightCssPx;
-        if (
-          cssX >= 34 &&
-          cssX <= bounds.widthCssPx - 34 &&
-          cssY >= 58 &&
-          cssY <= bounds.heightCssPx - 56
-        ) {
+        if (fitsClearOfChrome(cssX, cssY, 88, 20, 8, selCabinId !== null)) {
           showCabinPill = true;
           if (!this.cabinButton) {
             const cBtn = document.createElement("button");
@@ -403,16 +433,10 @@ export class TransitBadgeLayer {
         );
         const cssX = ((img.px - bounds.topLeft.x) / spanX) * bounds.widthCssPx;
         const cssY = ((img.py - bounds.topLeft.y) / spanY) * bounds.heightCssPx;
-        if (
-          cssX < 28 ||
-          cssX > bounds.widthCssPx - 28 ||
-          cssY < 56 ||
-          cssY > bounds.heightCssPx - 48
-        ) {
+        const isSel = p.id === selPlaneId;
+        if (!fitsClearOfChrome(cssX, cssY, Math.max(66, p.callsign.length * 6.5 + 36), 20, 8, isSel)) {
           continue;
         }
-
-        const isSel = p.id === selPlaneId;
         if (
           !isSel &&
           placedPlaneCoords.some((q) => Math.abs(q.x - cssX) < 68 && Math.abs(q.y - cssY) < 26)

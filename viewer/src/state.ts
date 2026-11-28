@@ -122,7 +122,7 @@ export function createInitialViewerState(
 ): ViewerState {
   const params = new URLSearchParams(search);
   const langParam = params.get("lang");
-  const lang: Lang = langParam === "en" ? "en" : "ja";
+  const lang: Lang = langParam === "ja" ? "ja" : "en";
 
   const themeParam = params.get("theme") as UiTheme | null;
   const explicitTheme: UiTheme | null =
@@ -251,7 +251,7 @@ export function serializeShareUrl(
     p.set("y", state.cameraView.centerImgY.toFixed(1));
     p.set("z", state.cameraView.zoom.toFixed(2));
   }
-  if (state.lang !== "ja") p.set("lang", state.lang);
+  if (state.lang !== "en") p.set("lang", state.lang);
   if (state.variant !== "illustrated") p.set("v", state.variant);
   if (state.feedPreset !== "synthetic") p.set("m", state.feedPreset);
   if (state.sunHourJst !== null) p.set("sun", state.sunHourJst.toFixed(2));
